@@ -197,6 +197,34 @@ func TestCrossOriginRefused(t *testing.T) {
 	if acts, _ := e.store.ListDay(ctx, today); len(acts) != 0 {
 		t.Error("a cross-origin request created an activity")
 	}
+
+	// Without Sec-Fetch-Site, a null Origin is refused...
+	req.Header.Del("Sec-Fetch-Site")
+	req.Header.Set("Origin", "null")
+	req.Body = io.NopCloser(strings.NewReader("q=Evil+10m"))
+	r, _ = http.DefaultClient.Do(req)
+	r.Body.Close()
+	if r.StatusCode != http.StatusForbidden {
+		t.Errorf("null-origin post without Sec-Fetch-Site: %d", r.StatusCode)
+	}
+}
+
+// Browsers send "Origin: null" on same-origin form posts under some referrer
+// policies; Sec-Fetch-Site: same-origin must still let the login through.
+func TestNullOriginSameSiteLogin(t *testing.T) {
+	e := newEnv(t)
+	req, _ := http.NewRequest(http.MethodPost, e.srv.URL+"/login", strings.NewReader("passphrase=wrong-passphrase"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "null")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if r.StatusCode == http.StatusForbidden {
+		t.Errorf("same-origin login with Origin: null was refused")
+	}
 }
 
 func TestDayPage(t *testing.T) {

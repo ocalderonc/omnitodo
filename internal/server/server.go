@@ -214,7 +214,8 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "no-referrer")
+		// Not no-referrer: under it browsers send "Origin: null" on form posts.
+		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		next.ServeHTTP(w, r)
@@ -231,11 +232,17 @@ func sameOrigin(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-			http.Error(w, "Cross-site request refused.", http.StatusForbidden)
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" {
+		// Sec-Fetch-Site is set by the browser and cannot be forged by a page,
+		// so when it is present it decides on its own. Origin is only the
+		// fallback for browsers without it: browsers may send "Origin: null"
+		// for legitimate same-origin form posts (e.g. under some referrer
+		// policies), so it must not overrule a same-origin Sec-Fetch-Site.
+		if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
+			if site != "same-origin" && site != "none" {
+				http.Error(w, "Cross-site request refused.", http.StatusForbidden)
+				return
+			}
+		} else if origin := r.Header.Get("Origin"); origin != "" {
 			u, err := url.Parse(origin)
 			if err != nil || u.Host != r.Host {
 				http.Error(w, "Cross-origin request refused.", http.StatusForbidden)
