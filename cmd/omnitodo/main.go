@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/ocalderonc/omnitodo/internal/civil"
 	"github.com/ocalderonc/omnitodo/internal/server"
 	"github.com/ocalderonc/omnitodo/internal/store"
+	"github.com/ocalderonc/omnitodo/internal/voice"
 )
 
 type config struct {
@@ -36,6 +38,11 @@ type config struct {
 	sessionSecret  string
 	cookieSecure   bool
 	noAuth         bool
+
+	// Voice entry (internal/voice). Off until OMNITODO_LLM_API_KEY is set;
+	// the microphone also needs OMNITODO_STT_API_KEY.
+	llmBaseURL, llmAPIKey, llmModel string
+	sttBaseURL, sttAPIKey, sttModel string
 }
 
 func loadConfig() config {
@@ -48,7 +55,47 @@ func loadConfig() config {
 		// Deliberately awkward to set: without auth anyone who can reach the
 		// port has the data. Only for local development (make run).
 		noAuth: os.Getenv("OMNITODO_INSECURE_NO_AUTH") == "1",
+
+		llmBaseURL: env("OMNITODO_LLM_BASE_URL", "https://api.deepseek.com"),
+		llmAPIKey:  strings.TrimSpace(os.Getenv("OMNITODO_LLM_API_KEY")),
+		llmModel:   env("OMNITODO_LLM_MODEL", "deepseek-flash"),
+		sttBaseURL: env("OMNITODO_STT_BASE_URL", "https://api.openai.com/v1"),
+		sttAPIKey:  strings.TrimSpace(os.Getenv("OMNITODO_STT_API_KEY")),
+		sttModel:   env("OMNITODO_STT_MODEL", "gpt-4o-transcribe"),
 	}
+}
+
+// voiceService builds voice entry from the config, or nil when it is off.
+// A key is only ever sent over https (or to localhost, for testing).
+func voiceService(cfg config) (*voice.Service, error) {
+	if cfg.llmAPIKey == "" {
+		if cfg.sttAPIKey != "" {
+			return nil, errors.New("OMNITODO_STT_API_KEY needs OMNITODO_LLM_API_KEY too: the transcript is read by the language model")
+		}
+		return nil, nil
+	}
+	if err := checkAPIURL("OMNITODO_LLM_BASE_URL", cfg.llmBaseURL); err != nil {
+		return nil, err
+	}
+	llm := voice.NewLLM(cfg.llmBaseURL, cfg.llmAPIKey, cfg.llmModel, nil)
+	if cfg.sttAPIKey == "" {
+		return voice.NewService(llm, nil), nil
+	}
+	if err := checkAPIURL("OMNITODO_STT_BASE_URL", cfg.sttBaseURL); err != nil {
+		return nil, err
+	}
+	return voice.NewService(llm, voice.NewTranscriber(cfg.sttBaseURL, cfg.sttAPIKey, cfg.sttModel, nil)), nil
+}
+
+func checkAPIURL(name, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("%s must be an absolute URL, such as https://api.deepseek.com", name)
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")) {
+		return fmt.Errorf("%s must be https: the API key would travel in clear text", name)
+	}
+	return nil
 }
 
 func env(key, def string) string {
@@ -124,6 +171,15 @@ func serve(ctx context.Context, cfg config) error {
 		PassphraseHash: cfg.passphraseHash,
 		CookieSecure:   cfg.cookieSecure,
 		NoAuth:         cfg.noAuth,
+	}
+	if scfg.Voice, err = voiceService(cfg); err != nil {
+		return err
+	}
+	switch {
+	case scfg.Voice.Transcribes():
+		slog.Info("voice entry on", "llm", cfg.llmModel, "stt", cfg.sttModel)
+	case scfg.Voice != nil:
+		slog.Info("voice entry: language model only, no microphone (set OMNITODO_STT_API_KEY)")
 	}
 	if cfg.noAuth {
 		slog.Warn("OMNITODO_INSECURE_NO_AUTH=1: login is disabled, anyone who can reach this port can use the app")

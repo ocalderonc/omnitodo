@@ -23,6 +23,7 @@ import (
 	"github.com/ocalderonc/omnitodo/internal/auth"
 	"github.com/ocalderonc/omnitodo/internal/schedule"
 	"github.com/ocalderonc/omnitodo/internal/store"
+	"github.com/ocalderonc/omnitodo/internal/voice"
 	"github.com/ocalderonc/omnitodo/web"
 )
 
@@ -35,7 +36,9 @@ type Config struct {
 	NoAuth         bool
 	CookieSecure   bool
 	Now            func() time.Time // defaults to time.Now
-	Logger         *slog.Logger
+	// Voice reads spoken activities; nil switches voice entry off.
+	Voice  *voice.Service
+	Logger *slog.Logger
 }
 
 type Server struct {
@@ -108,6 +111,7 @@ func (s *Server) routes() http.Handler {
 		r.Patch("/activities/{id}", s.updateActivity)
 		r.Post("/activities/{id}/toggle", s.toggleActivity)
 		r.Delete("/activities/{id}", s.deleteActivity)
+		r.Post("/voice", s.voiceDraft)
 
 		r.Get("/settings", s.settingsPage)
 		r.Post("/settings/companies", s.createCompany)
@@ -234,7 +238,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		// Not no-referrer: under it browsers send "Origin: null" on form posts.
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
-		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		h.Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=()")
 		next.ServeHTTP(w, r)
 	})
 }

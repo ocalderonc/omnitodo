@@ -4,6 +4,8 @@
   <input type="hidden" name="day" value="{{.Day}}">
   <input type="hidden" name="form" value="1">
   {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+  {{if .Voice}}{{with .Heard}}<p class="heard wide">Heard: “{{.}}”</p>{{end}}
+  {{range .Notes}}<p class="note wide">{{.}}</p>{{end}}{{end}}
 
   <label class="wide">Title <input name="title" value="{{.Title}}" required autofocus></label>
   <label>Kind

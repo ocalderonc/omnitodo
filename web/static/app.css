@@ -170,6 +170,17 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 .edit label.wide { grid-column: 1 / -1; }
 .edit footer { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: .5rem; }
 
+/* --- voice ------------------------------------------------------------------- */
+.quickadd .mic { background: var(--line); color: var(--text); padding: .5rem .7rem; line-height: 1; }
+.quickadd .mic.recording { background: var(--danger); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+.quickadd .mic.busy { opacity: .6; cursor: progress; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 .35rem color-mix(in srgb, var(--danger) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .quickadd .mic.recording { animation: none; } }
+.voice-status { color: var(--muted); margin: .3rem 0; font-size: .92rem; }
+.voice-status.error { color: var(--danger); background: var(--danger-bg); padding: .5rem .75rem; border-radius: 8px; }
+.edit .heard { grid-column: 1 / -1; margin: 0; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.edit .note { grid-column: 1 / -1; margin: 0; font-size: .88rem; color: var(--text); background: var(--free); border-left: 3px solid var(--accent); padding: .35rem .6rem; border-radius: 6px; }
+
 /* --- header nav, quick-add offer --------------------------------------------- */
 .topnav { display: flex; align-items: center; gap: .6rem; }
 .topnav a { color: var(--muted); text-decoration: none; }

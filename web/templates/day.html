@@ -30,8 +30,10 @@
   <form class="quickadd" hx-post="/activities" hx-target="#day" hx-swap="outerHTML">
     <input name="q" value="{{.QuickAdd}}" placeholder="Review PR 45m +LG #review @14:00" autocomplete="off" aria-label="Quick add"{{if .Error}} aria-invalid="true" autofocus{{end}}>
     <button>Add</button>
+    {{if .VoiceEnabled}}<button type="button" class="mic" data-voice hidden aria-label="Add by voice" title="Add by voice"><span aria-hidden="true">🎤</span></button>{{end}}
     <button type="button" class="secondary" hx-get="/activities/new" hx-target="#modal-body" hx-swap="innerHTML">Form…</button>
   </form>
+  {{if .VoiceEnabled}}<p class="voice-status" role="status" hidden></p>{{end}}
   {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
   {{with .MissingProject}}
   <form class="offer" hx-post="/activities" hx-target="#day" hx-swap="outerHTML">

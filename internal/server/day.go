@@ -32,6 +32,7 @@ type dayView struct {
 	Error          string
 	Notice         string
 	MissingProject string // a quick-add "+ref" that matched nothing: offer to create it
+	VoiceEnabled   bool
 }
 
 type companyChip struct {
@@ -117,10 +118,11 @@ func (s *Server) buildDay(ctx context.Context, d civil.Date) (dayView, error) {
 
 	v := dayView{
 		Date: d, Prev: d.AddDays(-1), Next: d.AddDays(1),
-		Label:   d.In(time.UTC).Format("Monday, 2 January 2006"),
-		IsToday: d == today,
-		Auth:    !s.cfg.NoAuth,
-		Summary: sum,
+		Label:        d.In(time.UTC).Format("Monday, 2 January 2006"),
+		IsToday:      d == today,
+		Auth:         !s.cfg.NoAuth,
+		Summary:      sum,
+		VoiceEnabled: s.cfg.Voice.Transcribes(),
 	}
 
 	byID := map[int64]schedule.Block{}

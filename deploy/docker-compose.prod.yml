@@ -24,6 +24,14 @@ services:
       OMNITODO_SESSION_SECRET: ${OMNITODO_SESSION_SECRET:?generate with openssl rand -base64 48}
       OMNITODO_COOKIE_SECURE: "true"
       TZ: ${TZ:-America/El_Salvador}
+      # Voice entry (README §9.5). Off until OMNITODO_LLM_API_KEY is set; the
+      # microphone also needs OMNITODO_STT_API_KEY. Both are secrets.
+      OMNITODO_LLM_BASE_URL: ${OMNITODO_LLM_BASE_URL:-https://api.deepseek.com}
+      OMNITODO_LLM_API_KEY: ${OMNITODO_LLM_API_KEY:-}
+      OMNITODO_LLM_MODEL: ${OMNITODO_LLM_MODEL:-deepseek-flash}
+      OMNITODO_STT_BASE_URL: ${OMNITODO_STT_BASE_URL:-https://api.openai.com/v1}
+      OMNITODO_STT_API_KEY: ${OMNITODO_STT_API_KEY:-}
+      OMNITODO_STT_MODEL: ${OMNITODO_STT_MODEL:-gpt-4o-transcribe}
     # `expose`, not `ports`: Traefik reaches the app over the Docker network.
     # Coolify validates the domain's port against this list.
     expose:

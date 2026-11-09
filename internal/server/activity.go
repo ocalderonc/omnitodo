@@ -24,6 +24,11 @@ type formView struct {
 	Title, Kind, Duration, StartAt, DueDate, Tags, Recurrence, Description string
 	Owner                                                                  string // "p:<id>", "c:<id>" or ""
 	Owners                                                                 []ownerGroup
+
+	// Voice drafts: what was heard, and what the owner should check.
+	Voice bool
+	Heard string
+	Notes []string
 }
 
 // The form's one "Project" select also offers each company on its own:

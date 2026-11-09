@@ -294,6 +294,12 @@ Config via env:
 | `OMNITODO_COOKIE_SECURE` | `true` | `false` only for local http |
 | `OMNITODO_INSECURE_NO_AUTH` | unset | `1` disables login; local development only |
 | `TZ` | `America/El_Salvador` | |
+| `OMNITODO_LLM_API_KEY` | unset | voice entry's language model; voice is off without it (§9.5) |
+| `OMNITODO_LLM_BASE_URL` | `https://api.deepseek.com` | any OpenAI-compatible chat completions API, https only |
+| `OMNITODO_LLM_MODEL` | `deepseek-flash` | |
+| `OMNITODO_STT_API_KEY` | unset | transcription; the microphone button appears only with it (needs the LLM key too) |
+| `OMNITODO_STT_BASE_URL` | `https://api.openai.com/v1` | any OpenAI-compatible `/audio/transcriptions` API, includes `/v1` |
+| `OMNITODO_STT_MODEL` | `gpt-4o-transcribe` | |
 
 ### 9.2 Coolify (same pattern as Moneta, much simpler)
 One Coolify **Docker Compose** resource built from `deploy/docker-compose.prod.yml`. No database resource:
@@ -355,6 +361,25 @@ docker run --rm -v <volume>:/data -v "$PWD":/in alpine sh -c \
 
 
 ---
+
+### 9.5 Voice entry
+A microphone button next to quick add. Say one activity, e.g. *"Enviar deployment de la API bajo el proyecto
+LG de Fox Nation, dura 20 minutos y debo terminar a las cuatro pm"*. The phone records until a pause (or a
+tap); the server transcribes it (OpenAI), a language model (DeepSeek) reads it into fields, and the **New
+activity form opens filled in**, with the transcript and anything to check above it. Nothing is saved until
+Save is tapped. Ported from Moneta's voice entry (`internal/voice`).
+
+- **What is sent:** the audio to the transcription API, the transcript to the language model, plus the names
+  of active companies, projects and tags (each under a short reference such as `p3`). No activities, no
+  history. Neither audio nor transcript is logged or stored.
+- **The server checks the answer:** only references from the list become IDs; otherwise the name heard is
+  matched (case-insensitively, a project within the company said); what still matches nothing, or a project
+  said under the wrong company, is left empty and noted in the form.
+- **Times:** "start at 3" fills Fixed start. "Must finish at 4" works the start back from the duration
+  (15:40 for 20 minutes) and says so. Start and end without a duration give the duration.
+- **Limits:** 60 requests per hour, recordings under 4 MB (about half a minute).
+- **Setup:** set `OMNITODO_LLM_API_KEY` and `OMNITODO_STT_API_KEY` in Coolify (the same keys Moneta uses work)
+  and redeploy. Without them the button is not shown.
 
 ## 10. Milestones
 
