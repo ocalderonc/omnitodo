@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
 )
@@ -86,9 +87,26 @@ func (s *Store) UpdateCompany(ctx context.Context, c Company) error {
 	return affected(res, mapErr(err, "company "+c.Name))
 }
 
-// DeleteCompany keeps its projects, which become company-less.
+// DeleteCompany keeps its projects, which become company-less. That fails
+// with ErrConflict if one of them has the same name as a project that already
+// has no company.
 func (s *Store) DeleteCompany(ctx context.Context, id int64) error {
-	return affected(s.db.ExecContext(ctx, `DELETE FROM company WHERE id = ?`, id))
+	res, err := s.db.ExecContext(ctx, `DELETE FROM company WHERE id = ?`, id)
+	if err != nil {
+		return mapErr(err, "a project of this company has the same name as a project without a company")
+	}
+	return affected(res, nil)
+}
+
+// CompanyByName finds a company case-insensitively, archived ones included.
+func (s *Store) CompanyByName(ctx context.Context, name string) (Company, error) {
+	var c Company
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, color, archived FROM company WHERE name = ? COLLATE NOCASE`,
+		strings.TrimSpace(name)).Scan(&c.ID, &c.Name, &c.Color, &c.Archived)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Company{}, ErrNotFound
+	}
+	return c, err
 }
 
 func (s *Store) ListCompanies(ctx context.Context, includeArchived bool) ([]Company, error) {

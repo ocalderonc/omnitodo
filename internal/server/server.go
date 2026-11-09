@@ -108,6 +108,17 @@ func (s *Server) routes() http.Handler {
 		r.Patch("/activities/{id}", s.updateActivity)
 		r.Post("/activities/{id}/toggle", s.toggleActivity)
 		r.Delete("/activities/{id}", s.deleteActivity)
+
+		r.Get("/settings", s.settingsPage)
+		r.Post("/settings/companies", s.createCompany)
+		r.Post("/settings/companies/{id}", s.updateCompany)
+		r.Post("/settings/companies/{id}/delete", s.deleteCompany)
+		r.Post("/settings/projects", s.createProject)
+		r.Post("/settings/projects/{id}", s.updateProject)
+		r.Post("/settings/projects/{id}/delete", s.deleteProject)
+		r.Post("/settings/tags/{id}", s.updateTag)
+		r.Post("/settings/tags/{id}/delete", s.deleteTag)
+		r.Post("/settings/day", s.updateDaySettings)
 	})
 	return r
 }
@@ -117,6 +128,7 @@ func (s *Server) routes() http.Handler {
 func (s *Server) funcs() template.FuncMap {
 	return template.FuncMap{
 		"dur":   schedule.FormatDuration,
+		"nav":   func(current string, auth bool) navView { return navView{Current: current, Auth: auth} },
 		"asset": func(name string) string { return "/static/" + name + "?v=" + s.assetV },
 	}
 }
@@ -127,7 +139,7 @@ func (s *Server) parseTemplates() error {
 		return err
 	}
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"login", "day"} {
+	for _, name := range []string{"login", "day", "settings"} {
 		t, err := template.Must(base.Clone()).ParseFS(web.Templates, "templates/"+name+".html")
 		if err != nil {
 			return err
@@ -137,6 +149,11 @@ func (s *Server) parseTemplates() error {
 	// Fragments ("day", "form") all live in the day page's set.
 	s.frags = s.pages["day"]
 	return nil
+}
+
+type navView struct {
+	Current string
+	Auth    bool
 }
 
 type page struct {

@@ -1,8 +1,5 @@
 {{define "content"}}
-<header class="top">
-  <a class="brand" href="/day">OmniTodo</a>
-  {{if .Body.Auth}}<form method="post" action="/logout"><button class="link">Log out</button></form>{{end}}
-</header>
+{{template "header" (nav "day" .Body.Auth)}}
 <main id="main" data-tab="list">
 {{template "day" .Body}}
 </main>
@@ -36,6 +33,14 @@
     <button type="button" class="secondary" hx-get="/activities/new" hx-target="#modal-body" hx-swap="innerHTML">Form…</button>
   </form>
   {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+  {{with .MissingProject}}
+  <form class="offer" hx-post="/activities" hx-target="#day" hx-swap="outerHTML">
+    <input type="hidden" name="q" value="{{$.QuickAdd}}">
+    <input type="hidden" name="create_project" value="1">
+    <button>Create project “{{.}}” and add</button>
+    <a href="/settings">Manage projects</a>
+  </form>
+  {{end}}
   {{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}
 
   <div class="tabs" role="tablist">

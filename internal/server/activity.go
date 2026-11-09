@@ -77,11 +77,30 @@ func (s *Server) createActivity(w http.ResponseWriter, r *http.Request) {
 	if res.Distractor {
 		in.Kind = schedule.KindDistractor
 	}
+	created := ""
 	if res.Project != "" {
 		p, err := s.store.ResolveProject(r.Context(), res.Project)
+		if errors.Is(err, store.ErrNotFound) && r.FormValue("create_project") != "" {
+			p, err = s.createProjectRef(r, res.Project)
+			switch {
+			case errors.Is(err, store.ErrConflict):
+				s.renderDay(w, r, day, "", fmt.Sprintf("A project called “%s” already exists but is archived: unarchive it in Settings.", res.Project), q)
+				return
+			case errors.Is(err, store.ErrInvalid):
+				s.renderDay(w, r, day, "", userMessage(err)+".", q)
+				return
+			case err == nil:
+				created = p.Name
+				if p.CompanyName != "" {
+					created = p.CompanyName + " / " + p.Name
+				}
+			}
+		}
 		switch {
 		case errors.Is(err, store.ErrNotFound):
-			s.renderDay(w, r, day, "", fmt.Sprintf("There is no project called “%s”.", res.Project), q)
+			s.renderDayView(w, r, day, func(v *dayView) {
+				v.Error, v.QuickAdd, v.MissingProject = fmt.Sprintf("There is no project called “%s”.", res.Project), q, res.Project
+			})
 			return
 		case errors.Is(err, store.ErrAmbiguous):
 			s.renderDay(w, r, day, "", fmt.Sprintf("More than one company has a project called “%s”: write +Company/%s.", res.Project, res.Project), q)
@@ -101,6 +120,9 @@ func (s *Server) createActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	notice := fmt.Sprintf("Added “%s”", a.Title)
+	if created != "" {
+		notice = fmt.Sprintf("Created project “%s” and added “%s”", created, a.Title)
+	}
 	if res.DefaultedDuration {
 		notice += fmt.Sprintf(" with the default %s (add e.g. 45m to set it)", schedule.FormatDuration(a.DurationMin))
 	}

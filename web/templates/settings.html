@@ -1,0 +1,113 @@
+{{define "content"}}
+{{template "header" (nav "settings" .Body.Auth)}}
+<main id="main">
+{{template "settings" .Body}}
+</main>
+{{end}}
+
+{{define "settings"}}
+<section id="settings" class="settings">
+  <h1>Settings</h1>
+  {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+  {{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}
+
+  <h2>Companies</h2>
+  <p class="hint">Who the work is for. The day summary adds up time per company.</p>
+  <ul class="rows">
+    {{range .Companies}}
+    <li>
+      <form class="row{{if .Archived}} archived{{end}}" method="post" action="/settings/companies/{{.ID}}"
+            hx-post="/settings/companies/{{.ID}}" hx-target="#settings" hx-swap="outerHTML">
+        <input type="color" name="color" value="{{.Color}}" aria-label="Color">
+        <input name="name" value="{{.Name}}" required aria-label="Company name">
+        <label class="check-label"><input type="checkbox" name="archived" value="1"{{if .Archived}} checked{{end}}> Archived</label>
+        <button>Save</button>
+        <button class="link danger" formaction="/settings/companies/{{.ID}}/delete"
+                hx-post="/settings/companies/{{.ID}}/delete"
+                hx-confirm="Delete the company “{{.Name}}”? Its projects are kept, without a company.">Delete</button>
+      </form>
+    </li>
+    {{else}}
+    <li class="empty">No companies yet.</li>
+    {{end}}
+    <li>
+      <form class="row new" method="post" action="/settings/companies"
+            hx-post="/settings/companies" hx-target="#settings" hx-swap="outerHTML">
+        <input type="color" name="color" value="#4f46e5" aria-label="Color">
+        <input name="name" required placeholder="New company, e.g. Acme" aria-label="New company name">
+        <button>Add company</button>
+      </form>
+    </li>
+  </ul>
+
+  <h2>Projects</h2>
+  <p class="hint">Use them in quick add as <code>+Name</code>, or <code>+Company/Name</code> when two companies have one with the same name. Without its own color, a project uses its company's.</p>
+  <ul class="rows">
+    {{range .Projects}}
+    <li>
+      <form class="row{{if .Archived}} archived{{end}}" method="post" action="/settings/projects/{{.ID}}"
+            hx-post="/settings/projects/{{.ID}}" hx-target="#settings" hx-swap="outerHTML">
+        <input type="color" name="color" value="{{.Swatch}}" aria-label="Color">
+        <label class="check-label"><input type="checkbox" name="own_color" value="1"{{if .OwnColor}} checked{{end}}> Own color</label>
+        <input name="name" value="{{.Name}}" required aria-label="Project name">
+        <select name="company_id" aria-label="Company">
+          <option value="">No company</option>
+          {{$cid := .CompanyID}}
+          {{range $.Companies}}<option value="{{.ID}}"{{if eq .ID $cid}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+        <label class="check-label"><input type="checkbox" name="archived" value="1"{{if .Archived}} checked{{end}}> Archived</label>
+        <button>Save</button>
+        <button class="link danger" formaction="/settings/projects/{{.ID}}/delete"
+                hx-post="/settings/projects/{{.ID}}/delete"
+                hx-confirm="Delete the project “{{.Name}}”? Its activities are kept, without a project.">Delete</button>
+      </form>
+    </li>
+    {{else}}
+    <li class="empty">No projects yet.</li>
+    {{end}}
+    <li>
+      <form class="row new" method="post" action="/settings/projects"
+            hx-post="/settings/projects" hx-target="#settings" hx-swap="outerHTML">
+        <input type="color" name="color" value="#6b7280" aria-label="Color">
+        <label class="check-label"><input type="checkbox" name="own_color" value="1"> Own color</label>
+        <input name="name" required placeholder="New project, e.g. Website" aria-label="New project name">
+        <select name="company_id" aria-label="Company">
+          <option value="">No company</option>
+          {{range .Companies}}{{if not .Archived}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+        </select>
+        <button>Add project</button>
+      </form>
+    </li>
+  </ul>
+
+  <h2>Tags</h2>
+  <p class="hint">Tags are created the first time you use them in quick add, e.g. <code>#review</code>.</p>
+  <ul class="rows">
+    {{range .Tags}}
+    <li>
+      <form class="row" method="post" action="/settings/tags/{{.ID}}"
+            hx-post="/settings/tags/{{.ID}}" hx-target="#settings" hx-swap="outerHTML">
+        <input type="color" name="color" value="{{.Color}}" aria-label="Color">
+        <input name="name" value="{{.Name}}" required aria-label="Tag name">
+        <button>Save</button>
+        <button class="link danger" formaction="/settings/tags/{{.ID}}/delete"
+                hx-post="/settings/tags/{{.ID}}/delete"
+                hx-confirm="Delete the tag #{{.Name}}? It is removed from every activity.">Delete</button>
+      </form>
+    </li>
+    {{else}}
+    <li class="empty">No tags yet.</li>
+    {{end}}
+  </ul>
+
+  <h2>Working day</h2>
+  <p class="hint">Activities without a fixed start are laid out from the day start; the day end is where overflow begins.</p>
+  <form class="row day" method="post" action="/settings/day"
+        hx-post="/settings/day" hx-target="#settings" hx-swap="outerHTML">
+    <label>Starts <input type="time" name="day_start" value="{{.DayStart}}" required></label>
+    <label>Ends <input type="time" name="day_end" value="{{.DayEnd}}" required></label>
+    <label class="tz">Timezone <input name="timezone" value="{{.Timezone}}" required placeholder="America/El_Salvador"></label>
+    <button>Save</button>
+  </form>
+</section>
+{{end}}

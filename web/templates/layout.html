@@ -22,3 +22,13 @@
 </body>
 </html>
 {{end}}
+
+{{define "header"}}
+<header class="top">
+  <a class="brand" href="/day">OmniTodo</a>
+  <nav class="topnav">
+    <a href="/settings"{{if eq .Current "settings"}} aria-current="page"{{end}}>Settings</a>
+    {{if .Auth}}<form method="post" action="/logout"><button class="link">Log out</button></form>{{end}}
+  </nav>
+</header>
+{{end}}

@@ -170,6 +170,35 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 .edit label.wide { grid-column: 1 / -1; }
 .edit footer { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: .5rem; }
 
+/* --- header nav, quick-add offer --------------------------------------------- */
+.topnav { display: flex; align-items: center; gap: .6rem; }
+.topnav a { color: var(--muted); text-decoration: none; }
+.topnav a:hover, .topnav a[aria-current="page"] { color: var(--text); }
+.offer { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .9rem; margin: -.2rem 0 .5rem; }
+.offer a { color: var(--muted); font-size: .9rem; }
+
+/* --- settings ---------------------------------------------------------------- */
+.settings { max-width: 52rem; }
+.settings h1 { font-size: 1.3rem; margin: 0 0 .6rem; }
+.settings h2 { font-size: 1.05rem; margin: 1.6rem 0 .2rem; }
+.settings .hint { color: var(--muted); font-size: .88rem; margin: 0 0 .6rem; }
+.rows { list-style: none; padding: 0; margin: 0; display: grid; gap: .4rem; }
+.row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem .6rem;
+}
+.row.new { border-style: dashed; }
+.row.archived > input[name="name"] { color: var(--muted); text-decoration: line-through; }
+.row input[name="name"], .row input[name="timezone"] { flex: 1 1 10rem; width: auto; }
+.row select { flex: 0 1 12rem; width: auto; }
+.row input[type="color"] { width: 2.4rem; height: 2.2rem; padding: .15rem; flex: none; }
+.row input[type="checkbox"] { width: auto; margin: 0; }
+.check-label { display: inline-flex; align-items: center; gap: .3rem; color: var(--muted); font-size: .88rem; white-space: nowrap; }
+.row.day label { display: grid; gap: .2rem; font-size: .85rem; color: var(--muted); }
+.row.day label.tz { flex: 1 1 14rem; }
+.row.day input[type="time"] { width: auto; }
+.row.day button { align-self: end; }
+
 /* --- phone ------------------------------------------------------------------ */
 @media (max-width: 760px) {
   #main { padding: .75rem; }

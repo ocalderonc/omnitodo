@@ -5,7 +5,7 @@ Tasks have durations, can be ordered manually, and are laid out on a daily timel
 **distractors** (meetings, kindergarten pickup, dead time) so I can see at a glance whether the day fits.
 Installable on the phone as a **PWA**.
 
-> Status: M1–M3 done, plus PWA and packaging from M7. M4 (drag & drop, keyboard) next. This README is the source of truth for the implementation.
+> Status: M1–M3 done, plus the settings page (companies, projects, tags, working day) and PWA and packaging from M7. M4 (drag & drop, keyboard) next. This README is the source of truth for the implementation.
 
 ---
 

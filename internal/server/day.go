@@ -28,9 +28,10 @@ type dayView struct {
 	Items     []itemView
 	Timeline  timelineView
 
-	QuickAdd string // echoed back after a parse error
-	Error    string
-	Notice   string
+	QuickAdd       string // echoed back after a parse error
+	Error          string
+	Notice         string
+	MissingProject string // a quick-add "+ref" that matched nothing: offer to create it
 }
 
 type companyChip struct {
@@ -251,6 +252,10 @@ func (s *Server) dayPage(w http.ResponseWriter, r *http.Request) {
 // renderDay answers a mutation: the #day fragment for HTMX, a redirect for a
 // plain form post.
 func (s *Server) renderDay(w http.ResponseWriter, r *http.Request, d civil.Date, notice, errMsg, quickAdd string) {
+	s.renderDayView(w, r, d, func(v *dayView) { v.Notice, v.Error, v.QuickAdd = notice, errMsg, quickAdd })
+}
+
+func (s *Server) renderDayView(w http.ResponseWriter, r *http.Request, d civil.Date, set func(*dayView)) {
 	if !isHTMX(r) {
 		http.Redirect(w, r, "/day/"+d.String(), http.StatusSeeOther)
 		return
@@ -260,8 +265,8 @@ func (s *Server) renderDay(w http.ResponseWriter, r *http.Request, d civil.Date,
 		s.serverError(w, r, err)
 		return
 	}
-	v.Notice, v.Error, v.QuickAdd = notice, errMsg, quickAdd
-	if errMsg == "" {
+	set(&v)
+	if v.Error == "" {
 		w.Header().Set("HX-Trigger", "closeModal")
 	}
 	s.renderFragment(w, r, "day", v)
