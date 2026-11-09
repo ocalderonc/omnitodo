@@ -10,23 +10,25 @@
   --ok: #15803d;
   --free: #f0f0ec;
   --distractor: #e7e7e2;
-  --ppm: 1.1px; /* timeline pixels per minute */
+  --ppm: 1.5px; /* timeline pixels per minute */
   --radius: 10px;
+  --block-mix: 30%; /* how much of the company color fills a timeline block */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141413;
-    --surface: #1e1e1c;
-    --text: #ececea;
-    --muted: #9b9b95;
-    --line: #2f2f2c;
+    --bg: #18181b;
+    --surface: #232327;
+    --text: #f2f2f0;
+    --muted: #a9a9a3;
+    --line: #3a3a3f;
     --accent: #8b85ff;
     --danger: #fb923c;
     --danger-bg: #3a2014;
     --ok: #4ade80;
-    --free: #1a1a19;
-    --distractor: #2a2a28;
+    --free: #1d1d21;
+    --distractor: #34343a;
+    --block-mix: 48%;
     color-scheme: dark;
   }
 }
@@ -141,21 +143,28 @@ body.offline::before {
   margin-left: 3rem; border-left: 1px solid var(--line);
 }
 .hour { position: absolute; left: 0; right: 0; top: calc(var(--s) * var(--ppm)); border-top: 1px dashed var(--line); }
-.hour span { position: absolute; left: -3rem; top: -.6rem; width: 2.6rem; text-align: right; font-size: .75rem; color: var(--muted); }
+.hour span { position: absolute; left: -3rem; top: -.6rem; width: 2.6rem; text-align: right; font-size: .82rem; color: var(--muted); }
 .block {
   position: absolute;
   top: calc(var(--s) * var(--ppm));
-  height: calc(var(--d) * var(--ppm));
+  height: calc(var(--d) * var(--ppm) - 2px); /* a hairline gap between back-to-back blocks */
   left: calc(.3rem + (100% - .3rem) * var(--lane) / var(--lanes));
   width: calc((100% - .3rem) / var(--lanes) - .3rem);
   overflow: hidden;
-  font-size: .78rem; line-height: 1.2; padding: .15rem .4rem;
-  border-radius: 6px; border-left: 4px solid var(--c, var(--muted));
-  background: color-mix(in srgb, var(--c, var(--muted)) 18%, var(--surface));
+  font-size: .9rem; line-height: 1.25; padding: .2rem .5rem; font-weight: 550;
+  border-radius: 6px; border-left: 5px solid var(--c, var(--muted));
+  background: color-mix(in srgb, var(--c, var(--muted)) var(--block-mix), var(--surface));
 }
-.block .range { color: var(--muted); }
-.block.distractor { background: repeating-linear-gradient(135deg, var(--distractor) 0 6px, var(--surface) 6px 12px); }
-.block.free { background: none; border: 1px dashed var(--line); color: var(--muted); }
+.block .range { color: color-mix(in srgb, var(--text) 70%, transparent); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* Distractors: hatched in their company's color (grey without one), so they
+   stand out from the free gaps without competing with the work. */
+.block.distractor {
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--c, var(--muted)) calc(var(--block-mix) * .8), var(--surface)) 0 7px,
+    var(--surface) 7px 13px);
+  border-left-style: dashed;
+}
+.block.free { background: none; border: 1px dashed var(--line); color: var(--muted); font-weight: 400; font-size: .82rem; }
 .block.done { opacity: .5; text-decoration: line-through; }
 .block.overflow, .block.conflict { outline: 2px solid var(--danger); outline-offset: -2px; }
 .now { position: absolute; left: 0; right: 0; top: calc(var(--s) * var(--ppm)); border-top: 2px solid var(--danger); z-index: 1; }
