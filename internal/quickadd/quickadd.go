@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ocalderonc/omnitodo/internal/civil"
+	"github.com/ocalderonc/omnitodo/internal/recurrence"
 )
 
 type Result struct {
@@ -158,29 +159,9 @@ func parseDue(val string, today civil.Date) (civil.Date, error) {
 func fullDay(wd time.Weekday) string { return strings.ToLower(wd.String()) }
 
 func parseRecurrence(val string) (string, error) {
-	switch v := strings.ToLower(val); v {
-	case "daily", "weekdays":
-		return v, nil
+	r, err := recurrence.Parse(val)
+	if err != nil {
+		return "", fmt.Errorf("recurrence *%s: want *daily, *weekdays or *weekly:MON,WED", val)
 	}
-	bad := fmt.Errorf("recurrence *%s: want *daily, *weekdays or *weekly:MON,WED", val)
-	days, ok := strings.CutPrefix(strings.ToLower(val), "weekly:")
-	if !ok || days == "" {
-		return "", bad
-	}
-	var seen [7]bool
-	for _, d := range strings.Split(days, ",") {
-		wd, ok := weekdays[d]
-		if !ok {
-			return "", bad
-		}
-		seen[wd] = true
-	}
-	// Canonical form: Monday-first order, upper case, no duplicates.
-	var out []string
-	for _, wd := range []time.Weekday{1, 2, 3, 4, 5, 6, 0} {
-		if seen[wd] {
-			out = append(out, strings.ToUpper(fullDay(wd)[:3]))
-		}
-	}
-	return "weekly:" + strings.Join(out, ","), nil
+	return r.String(), nil
 }

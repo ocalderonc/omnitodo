@@ -5,7 +5,7 @@ Tasks have durations, can be ordered manually, and are laid out on a daily timel
 **distractors** (meetings, kindergarten pickup, dead time) so I can see at a glance whether the day fits.
 Installable on the phone as a **PWA**.
 
-> Status: M1 (core logic) in progress. This README is the source of truth for the implementation.
+> Status: M1 (core logic) and M2 (persistence) done; M3 (day view) next. This README is the source of truth for the implementation.
 
 ---
 
@@ -175,7 +175,7 @@ Kindergarten pickup 40m ~d @12:10 *weekdays
 | token | meaning |
 |---|---|
 | `30m`, `2h`, `1h30m` | duration; if missing, 30m is used and the UI says so. If several, the last one wins and the others stay in the title |
-| `+name` | project (case-insensitive match, resolved by the caller) |
+| `+name` | project, case-insensitive. If two companies have a project with that name, use `+Company/Project`. Names with spaces can't be typed here (use the form) |
 | `#name` | tag (created if missing) |
 | `@HH:MM` | fixed start time |
 | `!YYYY-MM-DD`, `!today`, `!tomorrow`, `!mon`…`!sun` | due date (weekday = next occurrence, today counts) |
@@ -204,6 +204,11 @@ instead of silently ending up in the title. Parser in `internal/quickadd`, pure 
 Recurring activities are **templates**. When a day is viewed, instances are materialized lazily
 (create concrete rows for that date if not already present, linked via `template_id`).
 This keeps ordering, done status and edits per-day without a complex RRULE engine.
+
+- A template has `recur_from` (first day it may appear) and no `planned_date`.
+- Deleting one day's instance marks it `skipped` instead, otherwise it would be recreated on the next view.
+- Instances can't be moved to another day, and rollover leaves them (the next day has its own).
+- Rollover also leaves distractors: a missed meeting doesn't happen tomorrow.
 
 ---
 
@@ -264,7 +269,11 @@ GET    /manifest.webmanifest, /sw.js  PWA (no auth)
 make run            # go run ./cmd/omnitodo  → http://localhost:8080
 make test           # go test ./...
 make build          # ./bin/omnitodo
+make seed           # sample companies, projects and today's activities (empty DB only)
 ```
+
+The binary has three subcommands: `omnitodo` / `omnitodo serve`, `omnitodo seed`, and
+`omnitodo healthcheck` (probes `/healthz`; used by the container healthcheck).
 
 Config via env:
 | var | default | notes |
@@ -311,8 +320,8 @@ off-site, adapted from Moneta's `deploy/backup.sh`. Plus `GET /export.json` for 
 
 ## 10. Milestones
 
-- [ ] **M1 – Core logic**: `civil`, `schedule` + `quickadd` packages with tests. No UI yet.
-- [ ] **M2 – Persistence**: migrations, store layer, seed data (2 companies, a few projects, kindergarten pickup distractor).
+- [x] **M1 – Core logic**: `civil`, `schedule` + `quickadd` packages with tests. No UI yet.
+- [x] **M2 – Persistence**: migrations, store layer, seed data (2 companies, a few projects, kindergarten pickup distractor).
 - [ ] **M3 – Day view**: list + timeline + summary bar, create/edit/toggle/delete, passphrase login.
 - [ ] **M4 – Ordering**: drag & drop reorder, quick-add input, keyboard shortcuts.
 - [ ] **M5 – Backlog & rollover**: backlog page, plan-for-today, move unfinished to tomorrow.
