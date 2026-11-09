@@ -67,7 +67,8 @@ func (s *Store) CreateCompany(ctx context.Context, c Company) (Company, error) {
 	if c.Color, err = cleanColor(c.Color, false); err != nil {
 		return Company{}, err
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO company (name, color, archived) VALUES (?, ?, ?)`, c.Name, c.Color, c.Archived)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO company (name, name_key, color, archived) VALUES (?, ?, ?, ?)`,
+		c.Name, nameKey(c.Name), c.Color, c.Archived)
 	if err != nil {
 		return Company{}, mapErr(err, "company "+c.Name)
 	}
@@ -83,7 +84,8 @@ func (s *Store) UpdateCompany(ctx context.Context, c Company) error {
 	if c.Color, err = cleanColor(c.Color, false); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE company SET name = ?, color = ?, archived = ? WHERE id = ?`, c.Name, c.Color, c.Archived, c.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE company SET name = ?, name_key = ?, color = ?, archived = ? WHERE id = ?`,
+		c.Name, nameKey(c.Name), c.Color, c.Archived, c.ID)
 	return affected(res, mapErr(err, "company "+c.Name))
 }
 
@@ -101,8 +103,8 @@ func (s *Store) DeleteCompany(ctx context.Context, id int64) error {
 // CompanyByName finds a company case-insensitively, archived ones included.
 func (s *Store) CompanyByName(ctx context.Context, name string) (Company, error) {
 	var c Company
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, color, archived FROM company WHERE name = ? COLLATE NOCASE`,
-		strings.TrimSpace(name)).Scan(&c.ID, &c.Name, &c.Color, &c.Archived)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, color, archived FROM company WHERE name_key = ?`,
+		nameKey(name)).Scan(&c.ID, &c.Name, &c.Color, &c.Archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Company{}, ErrNotFound
 	}
@@ -137,8 +139,8 @@ func (s *Store) CreateProject(ctx context.Context, p Project) (Project, error) {
 	if p.Color, err = cleanColor(p.Color, true); err != nil {
 		return Project{}, err
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO project (company_id, name, color, archived) VALUES (?, ?, ?, ?)`,
-		nullInt(p.CompanyID), p.Name, nullString(p.Color), p.Archived)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO project (company_id, name, name_key, color, archived) VALUES (?, ?, ?, ?, ?)`,
+		nullInt(p.CompanyID), p.Name, nameKey(p.Name), nullString(p.Color), p.Archived)
 	if err != nil {
 		return Project{}, mapErr(err, "project "+p.Name)
 	}
@@ -154,8 +156,8 @@ func (s *Store) UpdateProject(ctx context.Context, p Project) error {
 	if p.Color, err = cleanColor(p.Color, true); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE project SET company_id = ?, name = ?, color = ?, archived = ? WHERE id = ?`,
-		nullInt(p.CompanyID), p.Name, nullString(p.Color), p.Archived, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE project SET company_id = ?, name = ?, name_key = ?, color = ?, archived = ? WHERE id = ?`,
+		nullInt(p.CompanyID), p.Name, nameKey(p.Name), nullString(p.Color), p.Archived, p.ID)
 	return affected(res, mapErr(err, "project "+p.Name))
 }
 
@@ -200,8 +202,8 @@ func (s *Store) ResolveProject(ctx context.Context, name string) (Project, error
 		project, company = company, ""
 	}
 	ps, err := scanProjects(s.db.QueryContext(ctx, `SELECT `+projectCols+`
-		WHERE p.archived = 0 AND p.name = ? COLLATE NOCASE
-		  AND (? = '' OR c.name = ? COLLATE NOCASE)`, project, company, company))
+		WHERE p.archived = 0 AND p.name_key = ?
+		  AND (? = '' OR c.name_key = ?)`, nameKey(project), nameKey(company), nameKey(company)))
 	switch {
 	case err != nil:
 		return Project{}, err
@@ -240,7 +242,7 @@ func (s *Store) UpdateTag(ctx context.Context, t Tag) error {
 	if t.Color, err = cleanColor(t.Color, false); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE tag SET name = ?, color = ? WHERE id = ?`, t.Name, t.Color, t.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE tag SET name = ?, name_key = ?, color = ? WHERE id = ?`, t.Name, nameKey(t.Name), t.Color, t.ID)
 	return affected(res, mapErr(err, "tag "+t.Name))
 }
 
@@ -259,8 +261,8 @@ func ensureTags(ctx context.Context, tx *sql.Tx, names []string) ([]int64, error
 			return nil, err
 		}
 		var id int64
-		err = tx.QueryRowContext(ctx, `INSERT INTO tag (name) VALUES (?)
-			ON CONFLICT (name) DO UPDATE SET name = name RETURNING id`, n).Scan(&id)
+		err = tx.QueryRowContext(ctx, `INSERT INTO tag (name, name_key) VALUES (?, ?)
+			ON CONFLICT (name_key) DO UPDATE SET name = name RETURNING id`, n, nameKey(n)).Scan(&id)
 		if err != nil {
 			return nil, err
 		}

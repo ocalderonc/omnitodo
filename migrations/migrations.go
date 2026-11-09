@@ -6,3 +6,6 @@ import "embed"
 
 //go:embed *.sql
 var FS embed.FS
+
+// Version 2 is a Go migration (store.migrationNameKey), so the next SQL file
+// is 00003.

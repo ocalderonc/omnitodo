@@ -65,7 +65,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {
-	p, err := goose.NewProvider(goose.DialectSQLite3, db, migrations.FS)
+	p, err := goose.NewProvider(goose.DialectSQLite3, db, migrations.FS,
+		goose.WithGoMigrations(goose.NewGoMigration(2, &goose.GoFunc{RunTx: migrationNameKey}, nil)))
 	if err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
