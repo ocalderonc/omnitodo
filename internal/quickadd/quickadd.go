@@ -54,7 +54,7 @@ func Parse(input string, today civil.Date) (Result, error) {
 	seenTags := map[string]bool{}
 
 	for _, tok := range strings.Fields(input) {
-		if d, ok := parseDuration(tok); ok {
+		if d, ok := ParseDuration(tok); ok {
 			// The last duration wins; an earlier one goes back into the title,
 			// so "Read 2 chapters 1h" and "Plan Q2 2h 30m" behave.
 			if durationIdx >= 0 {
@@ -125,7 +125,8 @@ func Parse(input string, today civil.Date) (Result, error) {
 	return r, nil
 }
 
-func parseDuration(tok string) (int, bool) {
+// ParseDuration reads "45m", "2h" or "1h30m" (case-insensitive) as minutes.
+func ParseDuration(tok string) (int, bool) {
 	m := durationRe.FindStringSubmatch(strings.ToLower(tok))
 	if m == nil || (m[1] == "" && m[2] == "") {
 		return 0, false

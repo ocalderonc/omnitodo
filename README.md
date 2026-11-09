@@ -5,7 +5,7 @@ Tasks have durations, can be ordered manually, and are laid out on a daily timel
 **distractors** (meetings, kindergarten pickup, dead time) so I can see at a glance whether the day fits.
 Installable on the phone as a **PWA**.
 
-> Status: M1 (core logic) and M2 (persistence) done; M3 (day view) next. This README is the source of truth for the implementation.
+> Status: M1–M3 done (core logic, persistence, day view with login). M4 (drag & drop, keyboard) next. This README is the source of truth for the implementation.
 
 ---
 
@@ -246,12 +246,13 @@ GET    /manifest.webmanifest, /sw.js  PWA (no auth)
 │   ├── schedule/            # BuildDay, Summary, FormatDuration (pure, tested)
 │   ├── quickadd/            # quick-add parser (pure, tested)
 │   ├── store/               # SQLite repo layer
-│   ├── http/                # handlers, routing, templates, auth
+│   ├── auth/                # passphrase hash (PBKDF2), signed session cookie, login limiter
+│   ├── server/              # handlers, routing, middleware (CSP, same-origin check)
 │   └── recurrence/          # template expansion
 ├── migrations/              # goose SQL files (embedded)
-├── web/
+├── web/                     # embedded into the binary (web/embed.go)
 │   ├── templates/
-│   └── static/              # htmx.min.js, Sortable.min.js, app.css, icons, sw.js
+│   └── static/              # htmx.min.js (2.0.4), app.css, app.js; later Sortable, icons, sw.js
 ├── deploy/
 │   ├── Dockerfile
 │   ├── docker-compose.yml       # local
@@ -272,17 +273,22 @@ make build          # ./bin/omnitodo
 make seed           # sample companies, projects and today's activities (empty DB only)
 ```
 
+`make run` disables login (`OMNITODO_INSECURE_NO_AUTH=1`) and the cookie `Secure` flag, for local http only.
+The server refuses to start without a valid passphrase hash and session secret unless that flag is set.
+
 The binary has three subcommands: `omnitodo` / `omnitodo serve`, `omnitodo seed`, and
-`omnitodo healthcheck` (probes `/healthz`; used by the container healthcheck).
+`omnitodo healthcheck` (probes `/healthz`; used by the container healthcheck), and
+`omnitodo hash-passphrase` (reads a passphrase on stdin, prints the value for `OMNITODO_PASSPHRASE_HASH`).
 
 Config via env:
 | var | default | notes |
 |---|---|---|
 | `OMNITODO_ADDR` | `:8080` | |
 | `OMNITODO_DB` | `./data/omnitodo.db` | `/data/omnitodo.db` in the container |
-| `OMNITODO_PASSPHRASE_HASH` | — (required in prod) | argon2id/bcrypt hash of the login passphrase |
+| `OMNITODO_PASSPHRASE_HASH` | — (required) | `pbkdf2-sha256$…` from `omnitodo hash-passphrase` (stdlib PBKDF2, 600k iterations) |
 | `OMNITODO_SESSION_SECRET` | — (required in prod) | `openssl rand -base64 48`, ≥ 32 chars |
 | `OMNITODO_COOKIE_SECURE` | `true` | `false` only for local http |
+| `OMNITODO_INSECURE_NO_AUTH` | unset | `1` disables login; local development only |
 | `TZ` | `America/El_Salvador` | |
 
 ### 9.2 Coolify (same pattern as Moneta, much simpler)
@@ -308,8 +314,10 @@ Migrations run inside the server at startup (goose, embedded), before it starts 
 `migrate` service is needed: there is no privileged DB role to separate.
 
 ### 9.3 Auth
-Single passphrase → signed, `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (long-lived, so the installed
-PWA stays logged in). Basic auth is **not** used: iOS standalone PWAs don't reliably keep basic-auth
+Single passphrase → HMAC-signed, `HttpOnly`, `Secure`, `SameSite=Lax` session cookie valid for a year, so the
+installed PWA stays logged in. Sessions are stateless: rotating `OMNITODO_SESSION_SECRET` logs out every device.
+Failed logins are limited to 10 per minute (globally: behind the proxy every client has the same address).
+State-changing requests from another origin are refused (`Sec-Fetch-Site` / `Origin` check). Basic auth is **not** used: iOS standalone PWAs don't reliably keep basic-auth
 credentials. Optional extra layer: Cloudflare Access or Tailscale in front.
 
 ### 9.4 Backup
@@ -322,7 +330,7 @@ off-site, adapted from Moneta's `deploy/backup.sh`. Plus `GET /export.json` for 
 
 - [x] **M1 – Core logic**: `civil`, `schedule` + `quickadd` packages with tests. No UI yet.
 - [x] **M2 – Persistence**: migrations, store layer, seed data (2 companies, a few projects, kindergarten pickup distractor).
-- [ ] **M3 – Day view**: list + timeline + summary bar, create/edit/toggle/delete, passphrase login.
+- [x] **M3 – Day view**: list + timeline + summary bar, create/edit/toggle/delete, passphrase login.
 - [ ] **M4 – Ordering**: drag & drop reorder, quick-add input, keyboard shortcuts.
 - [ ] **M5 – Backlog & rollover**: backlog page, plan-for-today, move unfinished to tomorrow.
 - [ ] **M6 – Recurrence** for distractors (pickup on weekdays, standups).

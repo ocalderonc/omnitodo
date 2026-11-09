@@ -1,0 +1,87 @@
+{{define "content"}}
+<header class="top">
+  <a class="brand" href="/day">OmniTodo</a>
+  {{if .Body.Auth}}<form method="post" action="/logout"><button class="link">Log out</button></form>{{end}}
+</header>
+<main id="main" data-tab="list">
+{{template "day" .Body}}
+</main>
+<dialog id="modal" aria-label="Activity"><div id="modal-body"></div></dialog>
+{{end}}
+
+{{define "day"}}
+<section id="day" hx-vals='{"day":"{{.Date}}"}'>
+  <nav class="daynav">
+    <a class="step" href="/day/{{.Prev}}" aria-label="Previous day">‹</a>
+    <h1>{{.Label}}</h1>
+    <a class="step" href="/day/{{.Next}}" aria-label="Next day">›</a>
+    {{if not .IsToday}}<a class="today" href="/day">Today</a>{{end}}
+  </nav>
+
+  <div class="summary{{if .Summary.Overbooked}} over{{end}}">
+    <span>Tasks <b>{{dur .Summary.TaskMinutes}}</b></span>
+    <span>Distractors <b>{{dur .Summary.DistractorMinutes}}</b></span>
+    <span class="free">Free <b>{{dur .Summary.FreeMinutes}}</b></span>
+    {{if .Summary.TaskMinutes}}<span class="done">Done <b>{{dur .Summary.DoneMinutes}}</b> of {{dur .Summary.TaskMinutes}}</span>{{end}}
+  </div>
+  {{if .Companies}}
+  <ul class="chips">
+    {{range .Companies}}<li style="{{.Style}}"><b>{{.Name}}</b> {{dur .Task}}{{if .Distractor}} <small>+{{dur .Distractor}} distractors</small>{{end}}</li>{{end}}
+  </ul>
+  {{end}}
+
+  <form class="quickadd" hx-post="/activities" hx-target="#day" hx-swap="outerHTML">
+    <input name="q" value="{{.QuickAdd}}" placeholder="Review PR 45m +LG #review @14:00" autocomplete="off" aria-label="Quick add"{{if .Error}} aria-invalid="true" autofocus{{end}}>
+    <button>Add</button>
+    <button type="button" class="secondary" hx-get="/activities/new" hx-target="#modal-body" hx-swap="innerHTML">Form…</button>
+  </form>
+  {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+  {{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}
+
+  <div class="tabs" role="tablist">
+    <button type="button" data-tab-btn="list">List</button>
+    <button type="button" data-tab-btn="timeline">Timeline</button>
+  </div>
+
+  <div class="cols">
+    <ol class="list">
+      {{range .Items}}
+      <li class="item {{.Kind}} {{.Status}}{{range .Flags}} {{.}}{{end}}" style="{{.Style}}" data-id="{{.ID}}">
+        <button class="check" hx-post="/activities/{{.ID}}/toggle" hx-target="#day" hx-swap="outerHTML"
+                aria-label="{{if .Done}}Mark as not done{{else}}Mark as done{{end}}" aria-pressed="{{.Done}}">{{if .Done}}✓{{end}}</button>
+        <div class="body">
+          <div class="title">{{.Title}}</div>
+          <div class="meta">
+            <span class="dur">{{dur .DurationMin}}</span>
+            {{if .Range}}<span class="range{{if .Anchored}} pinned{{end}}"{{if .Anchored}} title="Fixed start"{{end}}>{{.Range}}</span>{{end}}
+            {{with .ProjectName}}<span class="proj">{{.}}</span>{{end}}
+            {{range .Tags}}<span class="tag">#{{.Name}}</span>{{end}}
+            {{with .DueDate}}<span class="due">due {{.}}</span>{{end}}
+            {{range .Flags}}<span class="flag {{.}}">{{.}}</span>{{end}}
+            {{if eq .Status "skipped"}}<span class="flag">skipped</span>{{end}}
+          </div>
+          {{with .Description}}<p class="desc">{{.}}</p>{{end}}
+        </div>
+        <div class="actions">
+          <button class="link" hx-get="/activities/{{.ID}}/edit" hx-target="#modal-body" hx-swap="innerHTML">Edit</button>
+          <button class="link danger" hx-delete="/activities/{{.ID}}" hx-target="#day" hx-swap="outerHTML"
+                  hx-confirm="Delete “{{.Title}}”?">Delete</button>
+        </div>
+      </li>
+      {{else}}
+      <li class="empty">Nothing planned yet. Type something above, e.g. <code>Review PR 45m</code>.</li>
+      {{end}}
+    </ol>
+
+    <div class="timeline" style="{{.Timeline.Style}}" aria-label="Timeline">
+      {{range .Timeline.Hours}}<div class="hour" style="{{.Style}}"><span>{{.Label}}</span></div>{{end}}
+      {{range .Timeline.Blocks}}
+      <div class="block {{.Kind}}{{if .Done}} done{{end}}{{range .Flags}} {{.}}{{end}}" style="{{.Style}}" title="{{.Range}} {{.Title}}">
+        <span class="range">{{.Range}}</span> {{.Title}}
+      </div>
+      {{end}}
+      {{with .Timeline.Now}}<div class="now" style="{{.}}" aria-hidden="true"></div>{{end}}
+    </div>
+  </div>
+</section>
+{{end}}

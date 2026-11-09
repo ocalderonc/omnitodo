@@ -1,0 +1,35 @@
+{{define "form"}}
+<form class="edit" {{if .ID}}hx-patch="/activities/{{.ID}}"{{else}}hx-post="/activities"{{end}} hx-target="#day" hx-swap="outerHTML">
+  <h2>{{if .ID}}Edit activity{{else}}New activity{{end}}</h2>
+  <input type="hidden" name="day" value="{{.Day}}">
+  <input type="hidden" name="form" value="1">
+  {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+
+  <label class="wide">Title <input name="title" value="{{.Title}}" required autofocus></label>
+  <label>Kind
+    <select name="kind">
+      <option value="task"{{if eq .Kind "task"}} selected{{end}}>Task</option>
+      <option value="distractor"{{if eq .Kind "distractor"}} selected{{end}}>Distractor</option>
+    </select>
+  </label>
+  <label>Duration <input name="duration" value="{{.Duration}}" placeholder="45m, 1h30m" required></label>
+  <label>Fixed start <input type="time" name="start_at" value="{{.StartAt}}"></label>
+  <label>Due <input type="date" name="due_date" value="{{.DueDate}}"></label>
+  <label class="wide">Project
+    <select name="project_id">
+      <option value="">—</option>
+      {{range .Projects}}<option value="{{.ID}}"{{if eq .ID $.ProjectID}} selected{{end}}>{{with .CompanyName}}{{.}} / {{end}}{{.Name}}</option>{{end}}
+    </select>
+  </label>
+  <label class="wide">Tags <input name="tags" value="{{.Tags}}" placeholder="backend, review"></label>
+  {{if or .IsTemplate (not .ID)}}
+  <label class="wide">Repeats <input name="recurrence" value="{{.Recurrence}}" placeholder="weekdays · daily · weekly:MON,WED"{{if .IsTemplate}} required{{end}}></label>
+  {{end}}
+  <label class="wide">Notes <textarea name="description" rows="3">{{.Description}}</textarea></label>
+
+  <footer>
+    <button type="button" class="secondary" data-close>Cancel</button>
+    <button>Save</button>
+  </footer>
+</form>
+{{end}}

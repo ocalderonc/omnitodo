@@ -1,0 +1,13 @@
+{{define "content"}}
+<main class="login">
+  <form method="post" action="/login">
+    <h1>OmniTodo</h1>
+    <input type="hidden" name="next" value="{{.Body.Next}}">
+    <label>Passphrase
+      <input type="password" name="passphrase" autocomplete="current-password" required autofocus>
+    </label>
+    {{with .Body.Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+    <button>Log in</button>
+  </form>
+</main>
+{{end}}

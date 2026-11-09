@@ -1,12 +1,14 @@
 // Command omnitodo runs the OmniTodo server.
 //
-//	omnitodo              serve (default)
-//	omnitodo seed         fill an empty database with sample data
-//	omnitodo healthcheck  probe the running server's /healthz (for the container
-//	                      healthcheck: the distroless image has no shell or curl)
+//	omnitodo                  serve (default)
+//	omnitodo seed             fill an empty database with sample data
+//	omnitodo hash-passphrase  read a passphrase from stdin, print OMNITODO_PASSPHRASE_HASH
+//	omnitodo healthcheck      probe the running server's /healthz (for the container
+//	                          healthcheck: the distroless image has no shell or curl)
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -15,22 +17,35 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/ocalderonc/omnitodo/internal/auth"
 	"github.com/ocalderonc/omnitodo/internal/civil"
+	"github.com/ocalderonc/omnitodo/internal/server"
 	"github.com/ocalderonc/omnitodo/internal/store"
 )
 
 type config struct {
-	addr string
-	db   string
+	addr           string
+	db             string
+	passphraseHash string
+	sessionSecret  string
+	cookieSecure   bool
+	noAuth         bool
 }
 
 func loadConfig() config {
 	return config{
-		addr: env("OMNITODO_ADDR", ":8080"),
-		db:   env("OMNITODO_DB", "./data/omnitodo.db"),
+		addr:           env("OMNITODO_ADDR", ":8080"),
+		db:             env("OMNITODO_DB", "./data/omnitodo.db"),
+		passphraseHash: os.Getenv("OMNITODO_PASSPHRASE_HASH"),
+		sessionSecret:  os.Getenv("OMNITODO_SESSION_SECRET"),
+		cookieSecure:   env("OMNITODO_COOKIE_SECURE", "true") != "false",
+		// Deliberately awkward to set: without auth anyone who can reach the
+		// port has the data. Only for local development (make run).
+		noAuth: os.Getenv("OMNITODO_INSECURE_NO_AUTH") == "1",
 	}
 }
 
@@ -58,8 +73,10 @@ func main() {
 		err = seed(ctx, cfg)
 	case "healthcheck":
 		err = healthcheck(cfg)
+	case "hash-passphrase":
+		err = hashPassphrase()
 	default:
-		err = fmt.Errorf("unknown command %q (want serve, seed or healthcheck)", cmd)
+		err = fmt.Errorf("unknown command %q (want serve, seed, hash-passphrase or healthcheck)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "omnitodo:", err)
@@ -95,15 +112,33 @@ func serve(ctx context.Context, cfg config) error {
 	}
 	defer st.Close()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok\n"))
-	})
+	scfg := server.Config{
+		PassphraseHash: cfg.passphraseHash,
+		CookieSecure:   cfg.cookieSecure,
+		NoAuth:         cfg.noAuth,
+	}
+	if cfg.noAuth {
+		slog.Warn("OMNITODO_INSECURE_NO_AUTH=1: login is disabled, anyone who can reach this port can use the app")
+	} else {
+		if err := auth.ValidateHash(cfg.passphraseHash); err != nil {
+			return fmt.Errorf("OMNITODO_PASSPHRASE_HASH: %w", err)
+		}
+		if scfg.Sessions, err = auth.NewSessions(cfg.sessionSecret, 365*24*time.Hour); err != nil {
+			return fmt.Errorf("OMNITODO_SESSION_SECRET: %w", err)
+		}
+	}
+	handler, err := server.New(st, scfg)
+	if err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
@@ -119,6 +154,20 @@ func serve(ctx context.Context, cfg config) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	return nil
+}
+
+func hashPassphrase() error {
+	fmt.Fprintln(os.Stderr, "Passphrase (input is read from stdin, one line):")
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return err
+	}
+	h, err := auth.HashPassphrase(strings.TrimRight(line, "\r\n"))
+	if err != nil {
+		return err
+	}
+	fmt.Println(h)
 	return nil
 }
 
