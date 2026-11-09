@@ -47,6 +47,7 @@ type Server struct {
 	frags   *template.Template
 	assetV  string // content hash of the static files, for cache busting
 	static  fs.FS
+	sw      []byte // generated service worker
 }
 
 func New(st *store.Store, cfg Config) (http.Handler, error) {
@@ -73,6 +74,9 @@ func New(st *store.Store, cfg Config) (http.Handler, error) {
 	if s.assetV, err = hashFS(static); err != nil {
 		return nil, err
 	}
+	if s.sw, err = s.buildServiceWorker(); err != nil {
+		return nil, err
+	}
 	if err := s.parseTemplates(); err != nil {
 		return nil, err
 	}
@@ -85,6 +89,8 @@ func (s *Server) routes() http.Handler {
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	r.Handle("/static/*", s.staticHandler())
+	r.Get("/manifest.webmanifest", s.serveManifest)
+	r.Get("/sw.js", s.serveServiceWorker)
 	r.Get("/login", s.loginPage)
 	r.Post("/login", s.login)
 	r.Post("/logout", s.logout)

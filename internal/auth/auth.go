@@ -27,7 +27,11 @@ const (
 
 var b64 = base64.RawStdEncoding
 
-// HashPassphrase returns "pbkdf2-sha256$<iterations>$<salt>$<key>".
+// HashPassphrase returns "pbkdf2-sha256:<iterations>:<salt>:<key>".
+//
+// The separator is ':' rather than the conventional '$' on purpose: Docker
+// Compose and Coolify interpolate '$' in environment values, which would
+// silently mangle the hash.
 func HashPassphrase(passphrase string) (string, error) {
 	if len(passphrase) < 8 {
 		return "", errors.New("passphrase must be at least 8 characters")
@@ -38,7 +42,7 @@ func HashPassphrase(passphrase string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s$%d$%s$%s", prefix, iterations, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
+	return fmt.Sprintf("%s:%d:%s:%s", prefix, iterations, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
 }
 
 // ValidateHash reports whether encoded is a hash HashPassphrase could produce,
@@ -49,9 +53,9 @@ func ValidateHash(encoded string) error {
 }
 
 func parseHash(encoded string) (iter int, salt, key []byte, err error) {
-	parts := strings.Split(encoded, "$")
+	parts := strings.Split(encoded, ":")
 	if len(parts) != 4 || parts[0] != prefix {
-		return 0, nil, nil, errors.New("passphrase hash: want pbkdf2-sha256$<iter>$<salt>$<key> (run `omnitodo hash-passphrase`)")
+		return 0, nil, nil, errors.New("passphrase hash: want pbkdf2-sha256:<iter>:<salt>:<key> (run `omnitodo hash-passphrase`)")
 	}
 	if iter, err = strconv.Atoi(parts[1]); err != nil || iter < 100_000 {
 		return 0, nil, nil, errors.New("passphrase hash: bad iteration count")

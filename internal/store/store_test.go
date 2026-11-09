@@ -376,3 +376,24 @@ func TestSchemaRejectsMalformedValues(t *testing.T) {
 		t.Errorf("valid values rejected: %v", err)
 	}
 }
+
+func TestBackup(t *testing.T) {
+	s := open(t)
+	if err := s.Seed(ctx, today); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "backup.db")
+	for range 2 { // the second run replaces the first
+		if err := s.Backup(ctx, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if got := must[[]Activity](t)(b.ListDay(ctx, today)); len(got) != 6 {
+		t.Errorf("backup has %d activities today, want 6", len(got))
+	}
+}

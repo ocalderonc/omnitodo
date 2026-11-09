@@ -1,0 +1,52 @@
+# Production stack, deployed as a single Coolify "Docker Compose" resource.
+# See README §9.2 for the Coolify settings and the first-deploy checklist.
+#
+# Build context is `.` because Coolify runs compose with the repository root as
+# the project directory. By hand, pass the same flag:
+#   docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d --build
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Set the public domain on this service in Coolify
+      # (https://omnitodo.ischys.fyi). The magic variable's suffix is the
+      # container port the domain routes to.
+      SERVICE_FQDN_APP_8080: ${SERVICE_FQDN_APP_8080:-}
+
+      # `omnitodo hash-passphrase`. Uses ':' separators, not '$', so it survives
+      # Compose/Coolify variable interpolation unescaped.
+      OMNITODO_PASSPHRASE_HASH: ${OMNITODO_PASSPHRASE_HASH:?run omnitodo hash-passphrase and set it}
+      # openssl rand -base64 48. Rotating it logs out every device.
+      OMNITODO_SESSION_SECRET: ${OMNITODO_SESSION_SECRET:?generate with openssl rand -base64 48}
+      OMNITODO_COOKIE_SECURE: "true"
+      TZ: ${TZ:-America/El_Salvador}
+    # `expose`, not `ports`: Traefik reaches the app over the Docker network.
+    # Coolify validates the domain's port against this list.
+    expose:
+      - "8080"
+    volumes:
+      # Named, not a bind mount: a named volume inherits the image's /data
+      # ownership (uid 65532) on first creation; a bind mount does not.
+      - omnitodo-data:/data
+    healthcheck:
+      # Distroless has no shell or curl: the binary probes its own /healthz.
+      test: ["CMD", "/usr/local/bin/omnitodo", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  omnitodo-data:
+
+# One container only. SQLite allows a single writer process; never scale this
+# service or run two deployments against the same volume.

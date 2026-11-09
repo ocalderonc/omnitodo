@@ -5,7 +5,7 @@ Tasks have durations, can be ordered manually, and are laid out on a daily timel
 **distractors** (meetings, kindergarten pickup, dead time) so I can see at a glance whether the day fits.
 Installable on the phone as a **PWA**.
 
-> Status: M1–M3 done (core logic, persistence, day view with login). M4 (drag & drop, keyboard) next. This README is the source of truth for the implementation.
+> Status: M1–M3 done, plus PWA and packaging from M7. M4 (drag & drop, keyboard) next. This README is the source of truth for the implementation.
 
 ---
 
@@ -193,8 +193,10 @@ instead of silently ending up in the title. Parser in `internal/quickadd`, pure 
 - Public URL: `https://omnitodo.ischys.fyi` (behind Cloudflare, like Moneta: enable "Always Use HTTPS",
   disable any script injection such as Web Analytics, since the CSP would block it).
 - `GET /manifest.webmanifest`: name `OmniTodo`, `display: standalone`, `start_url: /day`, 192/512 px + maskable icons.
-- `GET /sw.js`: caches static assets (cache-first, versioned by build) and the last rendered day page
-  (network-first, fallback to cache with an "offline" banner). Served with `Cache-Control: no-cache`.
+- `GET /sw.js`: generated per build. Precaches static assets (cache-first, cache named after the asset hash)
+  and keeps the last copy of each day page (network-first; offline it serves that copy and the page shows an
+  "offline" banner). HTMX and non-GET requests always go to the network. Served with `Cache-Control: no-cache`.
+  Visiting `/login` clears the cached day pages.
 - Strict CSP without `'unsafe-inline'`: `htmx.config.includeIndicatorStyles = false`, no inline scripts.
 
 ---
@@ -255,8 +257,8 @@ GET    /manifest.webmanifest, /sw.js  PWA (no auth)
 │   └── static/              # htmx.min.js (2.0.4), app.css, app.js; later Sortable, icons, sw.js
 ├── deploy/
 │   ├── Dockerfile
-│   ├── docker-compose.yml       # local
-│   └── docker-compose.prod.yml  # Coolify
+│   ├── docker-compose.prod.yml  # Coolify
+│   └── backup.sh                # nightly encrypted backup (host cron)
 ├── Makefile
 └── README.md
 ```
@@ -278,51 +280,78 @@ The server refuses to start without a valid passphrase hash and session secret u
 
 The binary has three subcommands: `omnitodo` / `omnitodo serve`, `omnitodo seed`, and
 `omnitodo healthcheck` (probes `/healthz`; used by the container healthcheck), and
-`omnitodo hash-passphrase` (reads a passphrase on stdin, prints the value for `OMNITODO_PASSPHRASE_HASH`).
+`omnitodo hash-passphrase` (reads a passphrase on stdin, prints the value for `OMNITODO_PASSPHRASE_HASH`), and
+`omnitodo backup <file>` (consistent copy of the live database, see §9.4).
 
 Config via env:
 | var | default | notes |
 |---|---|---|
 | `OMNITODO_ADDR` | `:8080` | |
 | `OMNITODO_DB` | `./data/omnitodo.db` | `/data/omnitodo.db` in the container |
-| `OMNITODO_PASSPHRASE_HASH` | — (required) | `pbkdf2-sha256$…` from `omnitodo hash-passphrase` (stdlib PBKDF2, 600k iterations) |
+| `OMNITODO_PASSPHRASE_HASH` | — (required) | `pbkdf2-sha256:…` from `omnitodo hash-passphrase` (stdlib PBKDF2, 600k iterations) |
 | `OMNITODO_SESSION_SECRET` | — (required in prod) | `openssl rand -base64 48`, ≥ 32 chars |
 | `OMNITODO_COOKIE_SECURE` | `true` | `false` only for local http |
 | `OMNITODO_INSECURE_NO_AUTH` | unset | `1` disables login; local development only |
 | `TZ` | `America/El_Salvador` | |
 
 ### 9.2 Coolify (same pattern as Moneta, much simpler)
-One Coolify **Docker Compose** resource pointing at `deploy/docker-compose.prod.yml`. No separate database
-resource: SQLite lives on a named volume.
+One Coolify **Docker Compose** resource built from `deploy/docker-compose.prod.yml`. No database resource:
+SQLite lives on a named volume. The image is ~18 MB (static Go binary on distroless, nonroot).
+
+**First deploy**
+1. Generate the secrets locally:
+   ```bash
+   go run ./cmd/omnitodo hash-passphrase     # type the passphrase, copy the pbkdf2-sha256:… line
+   openssl rand -base64 48                   # session secret
+   ```
+2. Coolify → New resource → Docker Compose from the GitHub repo `ocalderonc/omnitodo`, branch `master`,
+   compose file `/deploy/docker-compose.prod.yml`.
+3. Environment variables: `OMNITODO_PASSPHRASE_HASH`, `OMNITODO_SESSION_SECRET`. The hash uses `:` separators,
+   so no `$` escaping is needed.
+4. Domain on the `app` service: `https://omnitodo.ischys.fyi`, port `8080`, **no path**.
+5. Cloudflare: DNS record for `omnitodo` (proxied), "Always Use HTTPS" on, no script injection
+   (Web Analytics / Rocket Loader): the CSP blocks it anyway.
+6. Deploy, then check `https://omnitodo.ischys.fyi/healthz` answers `ok` and log in.
+7. Optional sample data: `docker exec <container> /usr/local/bin/omnitodo seed` (empty database only).
+8. On the phone: open the site → Share → "Add to Home Screen" (iOS) / menu → "Install app" (Android).
 
 | Setting | Value | Why |
 |---|---|---|
-| Services | one: `app` | Go serves HTML, static, PWA files and JSON |
-| Domain | on `app`, port `8080`, **no path** | a path makes Coolify strip the prefix |
+| Services | one: `app` | Go serves HTML, static files, PWA files and JSON |
 | Ports | `expose: ["8080"]`, never `ports:` | Coolify validates the domain port against `expose` |
 | Volume | named volume `omnitodo-data` → `/data` | the database; survives redeploys |
-| Replicas | exactly one | SQLite must have a single writer process |
+| Replicas | exactly one | SQLite allows a single writer process |
 | Healthcheck | `["CMD", "/usr/local/bin/omnitodo", "healthcheck"]` | distroless has no shell/curl |
 | Hardening | `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges` | `/data` is the only writable path |
 
-**Volume ownership gotcha:** the distroless image runs as uid `65532`; a fresh volume is root-owned and
-SQLite then fails with "attempt to write a readonly database". The Dockerfile creates `/data` owned by
-`65532:65532`, and a *named* volume copies that ownership on first creation. A bind mount does not —
-don't use one.
+**Volume ownership gotcha:** the image runs as uid `65532`; a fresh volume is root-owned and SQLite then fails
+with "attempt to write a readonly database". The Dockerfile creates `/data` owned by `65532:65532`, and a
+*named* volume copies that ownership on first creation. A bind mount does not, so don't use one.
 
-Migrations run inside the server at startup (goose, embedded), before it starts listening. No separate
-`migrate` service is needed: there is no privileged DB role to separate.
+Migrations run inside the server at startup (goose, embedded), before it starts listening.
 
 ### 9.3 Auth
 Single passphrase → HMAC-signed, `HttpOnly`, `Secure`, `SameSite=Lax` session cookie valid for a year, so the
 installed PWA stays logged in. Sessions are stateless: rotating `OMNITODO_SESSION_SECRET` logs out every device.
 Failed logins are limited to 10 per minute (globally: behind the proxy every client has the same address).
-State-changing requests from another origin are refused (`Sec-Fetch-Site` / `Origin` check). Basic auth is **not** used: iOS standalone PWAs don't reliably keep basic-auth
-credentials. Optional extra layer: Cloudflare Access or Tailscale in front.
+State-changing requests from another origin are refused (`Sec-Fetch-Site` / `Origin` check).
+Basic auth is **not** used: iOS standalone PWAs don't reliably keep basic-auth credentials.
 
-### 9.4 Backup
-Nightly cron on the VPS: `sqlite3 /data/omnitodo.db ".backup …"` (or `VACUUM INTO`) → `age` encrypt → `rclone`
-off-site, adapted from Moneta's `deploy/backup.sh`. Plus `GET /export.json` for a manual dump.
+### 9.4 Backup & restore
+`deploy/backup.sh` runs nightly from root's cron on the VPS (setup in the script header):
+`omnitodo backup` does `VACUUM INTO` inside the running container (consistent copy, no downtime, no host
+`sqlite3`), then the script copies it out, encrypts it with `age` to a public key and ships it with `rclone`.
+
+Restore:
+```bash
+age -d -i key.txt omnitodo-<stamp>.db.age > omnitodo.db
+# Coolify: stop the resource, then on the VPS:
+docker run --rm -v <volume>:/data -v "$PWD":/in alpine sh -c \
+  'rm -f /data/omnitodo.db-wal /data/omnitodo.db-shm && cp /in/omnitodo.db /data/omnitodo.db && chown 65532:65532 /data/omnitodo.db'
+# start the resource again
+```
+`GET /export.json` (planned) will add a human-readable dump.
+
 
 ---
 
@@ -334,7 +363,8 @@ off-site, adapted from Moneta's `deploy/backup.sh`. Plus `GET /export.json` for 
 - [ ] **M4 – Ordering**: drag & drop reorder, quick-add input, keyboard shortcuts.
 - [ ] **M5 – Backlog & rollover**: backlog page, plan-for-today, move unfinished to tomorrow.
 - [ ] **M6 – Recurrence** for distractors (pickup on weekdays, standups).
-- [ ] **M7 – PWA & packaging**: manifest, service worker, icons, Dockerfile, Coolify compose, export/import, backup script.
+- [x] **M7a – PWA & packaging**: manifest, service worker, icons, Dockerfile, Coolify compose, backup script.
+- [ ] **M7b – Export/import**: `GET /export.json`, `POST /import.json`.
 - [ ] v2 ideas: `.ics` import as distractors, actual time tracking, week view with charts, offline writes.
 
 ---

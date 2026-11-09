@@ -67,6 +67,12 @@ code { font-size: .9em; background: var(--line); padding: 0 .3em; border-radius:
 .error { color: var(--danger); background: var(--danger-bg); padding: .5rem .75rem; border-radius: 8px; margin: .5rem 0; }
 .notice { color: var(--ok); margin: .5rem 0; }
 
+body.offline::before {
+  content: "Offline: showing the last saved copy. Changes will not be saved.";
+  display: block; text-align: center; padding: .4rem; font-size: .85rem;
+  background: var(--danger-bg); color: var(--danger);
+}
+
 /* --- frame ----------------------------------------------------------------- */
 .top {
   display: flex; justify-content: space-between; align-items: center;

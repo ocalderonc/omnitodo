@@ -177,3 +177,13 @@ func scanInt(ni sql.NullInt64) *int64 {
 func placeholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
+
+// Backup writes a consistent, compacted copy of the database to path while the
+// app keeps running (VACUUM INTO). An existing file at path is replaced.
+func (s *Store) Backup(ctx context.Context, path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path)
+	return err
+}

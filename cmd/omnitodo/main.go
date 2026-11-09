@@ -3,6 +3,7 @@
 //	omnitodo                  serve (default)
 //	omnitodo seed             fill an empty database with sample data
 //	omnitodo hash-passphrase  read a passphrase from stdin, print OMNITODO_PASSPHRASE_HASH
+//	omnitodo backup <file>    write a consistent copy of the database to <file>
 //	omnitodo healthcheck      probe the running server's /healthz (for the container
 //	                          healthcheck: the distroless image has no shell or curl)
 package main
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the configured timezone must resolve on any base image
 
 	"github.com/ocalderonc/omnitodo/internal/auth"
 	"github.com/ocalderonc/omnitodo/internal/civil"
@@ -75,8 +77,14 @@ func main() {
 		err = healthcheck(cfg)
 	case "hash-passphrase":
 		err = hashPassphrase()
+	case "backup":
+		if len(os.Args) != 3 {
+			err = errors.New("usage: omnitodo backup <file>")
+			break
+		}
+		err = backup(ctx, cfg, os.Args[2])
 	default:
-		err = fmt.Errorf("unknown command %q (want serve, seed, hash-passphrase or healthcheck)", cmd)
+		err = fmt.Errorf("unknown command %q (want serve, seed, backup, hash-passphrase or healthcheck)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "omnitodo:", err)
@@ -154,6 +162,19 @@ func serve(ctx context.Context, cfg config) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	return nil
+}
+
+func backup(ctx context.Context, cfg config, path string) error {
+	st, err := store.Open(ctx, cfg.db)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	if err := st.Backup(ctx, path); err != nil {
+		return err
+	}
+	fmt.Println("backed up", cfg.db, "to", path)
 	return nil
 }
 

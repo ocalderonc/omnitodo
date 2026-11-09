@@ -357,3 +357,36 @@ func TestStaticCaching(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestPWA(t *testing.T) {
+	e := newEnv(t) // not logged in: the browser fetches these without a session
+	r := e.do(http.MethodGet, "/manifest.webmanifest", nil, false)
+	if r.status != 200 || r.header.Get("Content-Type") != "application/manifest+json" {
+		t.Fatalf("manifest: %d %s", r.status, r.header.Get("Content-Type"))
+	}
+	var m struct {
+		StartURL string `json:"start_url"`
+		Display  string
+		Icons    []struct{ Src, Purpose string }
+	}
+	if err := json.Unmarshal([]byte(r.body), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.StartURL != "/day" || m.Display != "standalone" || len(m.Icons) != 3 {
+		t.Errorf("manifest: %+v", m)
+	}
+	for _, icon := range m.Icons {
+		if r := e.do(http.MethodGet, icon.Src, nil, false); r.status != 200 {
+			t.Errorf("icon %s: %d", icon.Src, r.status)
+		}
+	}
+
+	r = e.do(http.MethodGet, "/sw.js", nil, false)
+	if r.status != 200 || r.header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("sw: %d %q", r.status, r.header.Get("Cache-Control"))
+	}
+	contains(t, "sw.js", r.body, `"/static/app.js?v=`, `"/static/htmx.min.js?v=`, `"/static/icons/maskable-512.png?v=`)
+
+	r = e.do(http.MethodGet, "/login", nil, false)
+	contains(t, "layout", r.body, `rel="manifest"`, `rel="apple-touch-icon"`, `name="theme-color"`)
+}

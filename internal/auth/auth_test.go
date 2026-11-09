@@ -26,7 +26,7 @@ func TestPassphrase(t *testing.T) {
 	if _, err := HashPassphrase("short"); err == nil {
 		t.Error("short passphrase accepted")
 	}
-	for _, bad := range []string{"", "plain", "bcrypt$1$2$3", strings.Replace(h, "600000", "10", 1)} {
+	for _, bad := range []string{"", "plain", "bcrypt:1:2:3", strings.ReplaceAll(h, ":", "$"), strings.Replace(h, "600000", "10", 1)} {
 		if ValidateHash(bad) == nil || VerifyPassphrase(bad, "x") {
 			t.Errorf("malformed hash %q accepted", bad)
 		}
