@@ -79,6 +79,7 @@ Company 1───* Project 1───* Activity *───* Tag
 | title | text, required | |
 | description | text, nullable | markdown allowed, rendered safely |
 | project_id | FK → project, nullable | |
+| company_id | FK → company, nullable | only when project_id is NULL (a task for a company, no project); with a project the company comes from it. CHECK enforces at most one |
 | duration_min | int, required, > 0 | estimated duration in minutes |
 | planned_date | date, nullable | the day it's planned for; null = backlog |
 | position | int | manual order within `planned_date` (sparse ints, e.g. steps of 1000) |
@@ -175,7 +176,7 @@ Kindergarten pickup 40m ~d @12:10 *weekdays
 | token | meaning |
 |---|---|
 | `30m`, `2h`, `1h30m` | duration; if missing, 30m is used and the UI says so. If several, the last one wins and the others stay in the title |
-| `+name` | project, case-insensitive. If two companies have a project with that name, use `+Company/Project`. Names with spaces can't be typed here (use the form) |
+| `+name` | project, case-insensitive (including accented letters). If two companies have a project with that name, use `+Company/Project`. With no project of that name, a company called `name` is used: the task belongs to the company without a project. `+Company/` always means the company itself. An unknown name offers to create the project. Names with spaces can't be typed here (use the form) |
 | `#name` | tag (created if missing) |
 | `@HH:MM` | fixed start time |
 | `!YYYY-MM-DD`, `!today`, `!tomorrow`, `!mon`…`!sun` | due date (weekday = next occurrence, today counts) |

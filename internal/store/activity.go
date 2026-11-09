@@ -20,6 +20,7 @@ type Activity struct {
 	Title       string
 	Description string
 	ProjectID   *int64
+	CompanyID   *int64 // set only when there is no project; see CompanyName
 	DurationMin int
 	PlannedDate *civil.Date // nil = backlog (or a template)
 	Position    int
@@ -36,7 +37,7 @@ type Activity struct {
 
 	// Read-only, joined for display.
 	ProjectName string
-	CompanyName string
+	CompanyName string // the project's company, or the activity's own
 	Color       string // project color, else company color, else ""
 }
 
@@ -54,6 +55,7 @@ type ActivityInput struct {
 	Title       string
 	Description string
 	ProjectID   *int64
+	CompanyID   *int64 // only without a project: ignored when ProjectID is set
 	DurationMin int
 	PlannedDate *civil.Date // on create: the day, or nil for backlog. With Recurrence: the first day.
 	StartAt     *civil.Time
@@ -66,6 +68,9 @@ func (in *ActivityInput) validate() error {
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
 		return invalid("title is required")
+	}
+	if in.ProjectID != nil {
+		in.CompanyID = nil // the project decides the company
 	}
 	if in.DurationMin <= 0 {
 		return invalid("duration must be positive")
@@ -94,11 +99,11 @@ func (in *ActivityInput) validate() error {
 
 const activitySelect = `SELECT a.id, a.kind, a.title, ifnull(a.description, ''), a.project_id, a.duration_min,
 	a.planned_date, a.position, a.start_at, a.due_date, a.status, ifnull(a.recurrence, ''), a.is_template,
-	a.recur_from, a.template_id, a.created_at, a.updated_at,
+	a.recur_from, a.template_id, a.created_at, a.updated_at, a.company_id,
 	ifnull(p.name, ''), ifnull(c.name, ''), coalesce(p.color, c.color, '')
 	FROM activity a
 	LEFT JOIN project p ON p.id = a.project_id
-	LEFT JOIN company c ON c.id = p.company_id`
+	LEFT JOIN company c ON c.id = CASE WHEN a.project_id IS NULL THEN a.company_id ELSE p.company_id END`
 
 type querier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -112,17 +117,17 @@ func queryActivities(ctx context.Context, q querier, where string, args ...any) 
 	var out []Activity
 	for rows.Next() {
 		var a Activity
-		var projectID, templateID sql.NullInt64
+		var projectID, templateID, companyID sql.NullInt64
 		var planned, start, due, recurFrom sql.NullString
 		var created, updated string
 		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Description, &projectID, &a.DurationMin,
 			&planned, &a.Position, &start, &due, &a.Status, &a.Recurrence, &a.IsTemplate,
-			&recurFrom, &templateID, &created, &updated,
+			&recurFrom, &templateID, &created, &updated, &companyID,
 			&a.ProjectName, &a.CompanyName, &a.Color); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		a.ProjectID, a.TemplateID = scanInt(projectID), scanInt(templateID)
+		a.ProjectID, a.TemplateID, a.CompanyID = scanInt(projectID), scanInt(templateID), scanInt(companyID)
 		if a.PlannedDate, err = scanDate(planned); err == nil {
 			if a.DueDate, err = scanDate(due); err == nil {
 				if a.RecurFrom, err = scanDate(recurFrom); err == nil {
@@ -198,7 +203,7 @@ type BacklogFilter struct {
 // ListBacklog returns unplanned, unfinished activities in manual order.
 func (s *Store) ListBacklog(ctx context.Context, f BacklogFilter) ([]Activity, error) {
 	return queryActivities(ctx, s.db, `WHERE a.is_template = 0 AND a.planned_date IS NULL AND a.status = 'todo'
-		AND (? IS NULL OR p.company_id = ?)
+		AND (? IS NULL OR c.id = ?)
 		AND (? IS NULL OR a.project_id = ?)
 		AND (? IS NULL OR EXISTS (SELECT 1 FROM activity_tag at WHERE at.activity_id = a.id AND at.tag_id = ?))
 		ORDER BY a.position, a.id`,
@@ -234,10 +239,10 @@ func (s *Store) CreateActivity(ctx context.Context, in ActivityInput) (Activity,
 			}
 		}
 		err := tx.QueryRowContext(ctx, `INSERT INTO activity
-			(kind, title, description, project_id, duration_min, planned_date, position, start_at, due_date,
+			(kind, title, description, project_id, company_id, duration_min, planned_date, position, start_at, due_date,
 			 recurrence, is_template, recur_from)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-			in.Kind, in.Title, nullString(in.Description), nullInt(in.ProjectID), in.DurationMin, planned, pos,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			in.Kind, in.Title, nullString(in.Description), nullInt(in.ProjectID), nullInt(in.CompanyID), in.DurationMin, planned, pos,
 			nullTime(in.StartAt), nullDate(in.DueDate), nullString(in.Recurrence), template, recurFrom).Scan(&id)
 		if err != nil {
 			return mapErr(err, "activity")
@@ -270,9 +275,9 @@ func (s *Store) UpdateActivity(ctx context.Context, id int64, in ActivityInput) 
 			return invalid("cannot add or remove recurrence on an existing activity")
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE activity SET kind = ?, title = ?, description = ?, project_id = ?,
-			duration_min = ?, start_at = ?, due_date = ?, recurrence = ?,
+			company_id = ?, duration_min = ?, start_at = ?, due_date = ?, recurrence = ?,
 			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-			in.Kind, in.Title, nullString(in.Description), nullInt(in.ProjectID), in.DurationMin,
+			in.Kind, in.Title, nullString(in.Description), nullInt(in.ProjectID), nullInt(in.CompanyID), in.DurationMin,
 			nullTime(in.StartAt), nullDate(in.DueDate), nullString(in.Recurrence), id)
 		if err != nil {
 			return mapErr(err, "activity")

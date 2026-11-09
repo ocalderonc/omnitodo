@@ -150,7 +150,7 @@ func TestQuickAddCreatesMissingProject(t *testing.T) {
 
 	// Unknown project: an error plus the offer, nothing created.
 	r := e.do(http.MethodPost, "/activities", url.Values{"q": {"Fix nav 45m +Website"}, "day": {day}}, true)
-	if !strings.Contains(r.body, "There is no project called “Website”") ||
+	if !strings.Contains(r.body, "There is no project or company called “Website”") ||
 		!strings.Contains(r.body, `name="create_project"`) || !strings.Contains(r.body, "Create project “Website” and add") {
 		t.Fatalf("offer missing:\n%s", r.body)
 	}

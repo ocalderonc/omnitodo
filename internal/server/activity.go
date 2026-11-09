@@ -22,8 +22,87 @@ type formView struct {
 	Error      string
 
 	Title, Kind, Duration, StartAt, DueDate, Tags, Recurrence, Description string
-	ProjectID                                                              int64
-	Projects                                                               []store.Project
+	Owner                                                                  string // "p:<id>", "c:<id>" or ""
+	Owners                                                                 []ownerGroup
+}
+
+// The form's one "Project" select also offers each company on its own:
+// grouped by company, its first option is the company with no project.
+type ownerGroup struct {
+	Label   string
+	Options []ownerOption
+}
+
+type ownerOption struct{ Value, Label string }
+
+func ownerOf(a store.Activity) string {
+	switch {
+	case a.ProjectID != nil:
+		return "p:" + strconv.FormatInt(*a.ProjectID, 10)
+	case a.CompanyID != nil:
+		return "c:" + strconv.FormatInt(*a.CompanyID, 10)
+	}
+	return ""
+}
+
+// ownerGroups lists active companies and projects. keep is the activity's
+// current owner, listed even if archived so saving does not drop it.
+func (s *Server) ownerGroups(r *http.Request, keep string, keepLabel string) ([]ownerGroup, error) {
+	companies, err := s.store.ListCompanies(r.Context(), false)
+	if err != nil {
+		return nil, err
+	}
+	projects, err := s.store.ListProjects(r.Context(), false)
+	if err != nil {
+		return nil, err
+	}
+	var groups []ownerGroup
+	index := map[int64]int{}
+	for _, c := range companies {
+		id := strconv.FormatInt(c.ID, 10)
+		index[c.ID] = len(groups)
+		groups = append(groups, ownerGroup{Label: c.Name, Options: []ownerOption{{"c:" + id, c.Name + " (no project)"}}})
+	}
+	var loose []ownerOption
+	for _, p := range projects {
+		opt := ownerOption{"p:" + strconv.FormatInt(p.ID, 10), p.Name}
+		if i, ok := index[derefOr(p.CompanyID, -1)]; ok {
+			groups[i].Options = append(groups[i].Options, opt)
+		} else {
+			loose = append(loose, opt)
+		}
+	}
+	if len(loose) > 0 {
+		groups = append(groups, ownerGroup{Label: "No company", Options: loose})
+	}
+	if keep != "" {
+		for _, g := range groups {
+			for _, o := range g.Options {
+				if o.Value == keep {
+					return groups, nil
+				}
+			}
+		}
+		groups = append(groups, ownerGroup{Label: "Archived", Options: []ownerOption{{keep, keepLabel}}})
+	}
+	return groups, nil
+}
+
+func derefOr(p *int64, def int64) int64 {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+func ownerLabel(a store.Activity) string {
+	switch {
+	case a.ProjectName != "" && a.CompanyName != "":
+		return a.CompanyName + " / " + a.ProjectName
+	case a.ProjectName != "":
+		return a.ProjectName
+	}
+	return a.CompanyName + " (no project)"
 }
 
 // formDay is the day the request was made from (the "day" value HTMX sends
@@ -78,8 +157,33 @@ func (s *Server) createActivity(w http.ResponseWriter, r *http.Request) {
 		in.Kind = schedule.KindDistractor
 	}
 	created := ""
-	if res.Project != "" {
+	companyOnly, wantCompany := strings.CutSuffix(res.Project, "/")
+	if res.Project != "" && wantCompany {
+		// "+Acme/": the company itself, no project.
+		c, err := s.store.CompanyByName(r.Context(), companyOnly)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			s.renderDay(w, r, day, "", fmt.Sprintf("There is no company called “%s”: add it in Settings.", companyOnly), q)
+			return
+		case err != nil:
+			s.serverError(w, r, err)
+			return
+		case c.Archived:
+			s.renderDay(w, r, day, "", fmt.Sprintf("The company “%s” is archived: unarchive it in Settings.", c.Name), q)
+			return
+		}
+		in.CompanyID = &c.ID
+	} else if res.Project != "" {
 		p, err := s.store.ResolveProject(r.Context(), res.Project)
+		if errors.Is(err, store.ErrNotFound) && !strings.Contains(res.Project, "/") {
+			// "+Acme" with no project of that name: the company Acme, if any.
+			if c, cerr := s.store.CompanyByName(r.Context(), res.Project); cerr == nil && !c.Archived {
+				in.CompanyID, err = &c.ID, nil
+			} else if cerr != nil && !errors.Is(cerr, store.ErrNotFound) {
+				s.serverError(w, r, cerr)
+				return
+			}
+		}
 		if errors.Is(err, store.ErrNotFound) && r.FormValue("create_project") != "" {
 			p, err = s.createProjectRef(r, res.Project)
 			switch {
@@ -99,7 +203,7 @@ func (s *Server) createActivity(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			s.renderDayView(w, r, day, func(v *dayView) {
-				v.Error, v.QuickAdd, v.MissingProject = fmt.Sprintf("There is no project called “%s”.", res.Project), q, res.Project
+				v.Error, v.QuickAdd, v.MissingProject = missingMessage(res.Project), q, res.Project
 			})
 			return
 		case errors.Is(err, store.ErrAmbiguous):
@@ -109,7 +213,9 @@ func (s *Server) createActivity(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r, err)
 			return
 		}
-		in.ProjectID = &p.ID
+		if in.CompanyID == nil {
+			in.ProjectID = &p.ID
+		}
 	}
 	a, err := s.store.CreateActivity(r.Context(), in)
 	if errors.Is(err, store.ErrInvalid) {
@@ -140,12 +246,12 @@ func (s *Server) newForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	projects, err := s.store.ListProjects(r.Context(), false)
+	owners, err := s.ownerGroups(r, "", "")
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderFragment(w, r, "form", formView{Day: day, Kind: string(schedule.KindTask), Duration: "30m", Projects: projects})
+	s.renderFragment(w, r, "form", formView{Day: day, Kind: string(schedule.KindTask), Duration: "30m", Owners: owners})
 }
 
 func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
@@ -164,13 +270,13 @@ func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	projects, err := s.store.ListProjects(r.Context(), false)
+	owners, err := s.ownerGroups(r, ownerOf(a), ownerLabel(a))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
 	v := formView{
-		ID: a.ID, Day: day, IsTemplate: a.IsTemplate, Projects: projects,
+		ID: a.ID, Day: day, IsTemplate: a.IsTemplate, Owners: owners, Owner: ownerOf(a),
 		Title: a.Title, Kind: string(a.Kind), Duration: compactDuration(a.DurationMin),
 		Recurrence: a.Recurrence, Description: a.Description,
 	}
@@ -179,9 +285,6 @@ func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.DueDate != nil {
 		v.DueDate = a.DueDate.String()
-	}
-	if a.ProjectID != nil {
-		v.ProjectID = *a.ProjectID
 	}
 	var tags []string
 	for _, t := range a.Tags {
@@ -218,7 +321,8 @@ func (s *Server) saveForm(w http.ResponseWriter, r *http.Request, id int64, day 
 		StartAt: r.FormValue("start_at"), DueDate: r.FormValue("due_date"), Tags: r.FormValue("tags"),
 		Recurrence: strings.TrimSpace(r.FormValue("recurrence")), Description: r.FormValue("description"),
 	}
-	in, err := s.formInput(v, r.FormValue("project_id"))
+	v.Owner = r.FormValue("owner")
+	in, err := s.formInput(v)
 	if err == nil {
 		var a store.Activity
 		if id == 0 {
@@ -238,13 +342,16 @@ func (s *Server) saveForm(w http.ResponseWriter, r *http.Request, id int64, day 
 	}
 
 	v.Error = strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
-	v.ProjectID, _ = strconv.ParseInt(r.FormValue("project_id"), 10, 64)
+	keep, keepLabel := "", ""
 	if id != 0 {
 		if a, err := s.store.GetActivity(r.Context(), id); err == nil {
 			v.IsTemplate = a.IsTemplate
+			if ownerOf(a) == v.Owner {
+				keep, keepLabel = v.Owner, ownerLabel(a)
+			}
 		}
 	}
-	if v.Projects, err = s.store.ListProjects(r.Context(), false); err != nil {
+	if v.Owners, err = s.ownerGroups(r, keep, keepLabel); err != nil {
 		s.serverError(w, r, err)
 		return
 	}
@@ -253,7 +360,7 @@ func (s *Server) saveForm(w http.ResponseWriter, r *http.Request, id int64, day 
 	s.renderFragment(w, r, "form", v)
 }
 
-func (s *Server) formInput(v formView, projectID string) (store.ActivityInput, error) {
+func (s *Server) formInput(v formView) (store.ActivityInput, error) {
 	in := store.ActivityInput{
 		Kind: schedule.Kind(v.Kind), Title: v.Title, Description: v.Description, Recurrence: v.Recurrence,
 	}
@@ -279,12 +386,19 @@ func (s *Server) formInput(v formView, projectID string) (store.ActivityInput, e
 		}
 		in.DueDate = &d
 	}
-	if projectID != "" {
-		pid, err := strconv.ParseInt(projectID, 10, 64)
-		if err != nil {
+	if v.Owner != "" {
+		kind, raw, _ := strings.Cut(v.Owner, ":")
+		id, err := strconv.ParseInt(raw, 10, 64)
+		switch {
+		case err != nil:
+			return in, fmt.Errorf("%w: project", store.ErrInvalid)
+		case kind == "p":
+			in.ProjectID = &id
+		case kind == "c":
+			in.CompanyID = &id
+		default:
 			return in, fmt.Errorf("%w: project", store.ErrInvalid)
 		}
-		in.ProjectID = &pid
 	}
 	for _, t := range strings.FieldsFunc(v.Tags, func(r rune) bool { return r == ',' || r == ' ' }) {
 		if t = strings.TrimPrefix(t, "#"); t != "" {
@@ -339,4 +453,11 @@ func (s *Server) deleteActivity(w http.ResponseWriter, r *http.Request) {
 		notice = fmt.Sprintf("Skipped “%s” for this day.", a.Title)
 	}
 	s.renderDay(w, r, day, notice, "", "")
+}
+
+func missingMessage(ref string) string {
+	if strings.Contains(ref, "/") {
+		return fmt.Sprintf("There is no project called “%s”.", ref)
+	}
+	return fmt.Sprintf("There is no project or company called “%s”.", ref)
 }

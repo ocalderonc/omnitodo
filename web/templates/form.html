@@ -16,9 +16,11 @@
   <label>Fixed start <input type="time" name="start_at" value="{{.StartAt}}"></label>
   <label>Due <input type="date" name="due_date" value="{{.DueDate}}"></label>
   <label class="wide">Project
-    <select name="project_id">
+    <select name="owner">
       <option value="">—</option>
-      {{range .Projects}}<option value="{{.ID}}"{{if eq .ID $.ProjectID}} selected{{end}}>{{with .CompanyName}}{{.}} / {{end}}{{.Name}}</option>{{end}}
+      {{range .Owners}}<optgroup label="{{.Label}}">
+        {{range .Options}}<option value="{{.Value}}"{{if eq .Value $.Owner}} selected{{end}}>{{.Label}}</option>{{end}}
+      </optgroup>{{end}}
     </select>
   </label>
   <label class="wide">Tags <input name="tags" value="{{.Tags}}" placeholder="backend, review"></label>

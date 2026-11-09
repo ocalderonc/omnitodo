@@ -161,9 +161,17 @@ func (s *Store) UpdateProject(ctx context.Context, p Project) error {
 	return affected(res, mapErr(err, "project "+p.Name))
 }
 
-// DeleteProject keeps its activities, which become project-less.
+// DeleteProject keeps its activities, which become project-less but stay
+// with the project's company, so the company's totals do not change.
 func (s *Store) DeleteProject(ctx context.Context, id int64) error {
-	return affected(s.db.ExecContext(ctx, `DELETE FROM project WHERE id = ?`, id))
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `UPDATE activity
+			SET company_id = (SELECT company_id FROM project WHERE id = ?), project_id = NULL
+			WHERE project_id = ?`, id, id); err != nil {
+			return err
+		}
+		return affected(tx.ExecContext(ctx, `DELETE FROM project WHERE id = ?`, id))
+	})
 }
 
 const projectCols = `p.id, p.company_id, p.name, ifnull(p.color, ''), p.archived, ifnull(c.name, '')

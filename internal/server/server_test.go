@@ -278,7 +278,7 @@ func TestQuickAdd(t *testing.T) {
 
 	for q, msg := range map[string]string{
 		"Call 10m @25:00": "start time @25:00",
-		"Call 10m +nope":  "no project called “nope”",
+		"Call 10m +nope":  "no project or company called “nope”",
 	} {
 		r = e.do(http.MethodPost, "/activities", url.Values{"q": {q}, "day": {"2026-11-09"}}, true)
 		contains(t, q, r.body, msg, `aria-invalid="true"`)

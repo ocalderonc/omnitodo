@@ -59,7 +59,7 @@
           <div class="meta">
             <span class="dur">{{dur .DurationMin}}</span>
             {{if .Range}}<span class="range{{if .Anchored}} pinned{{end}}"{{if .Anchored}} title="Fixed start"{{end}}>{{.Range}}</span>{{end}}
-            {{with .ProjectName}}<span class="proj">{{.}}</span>{{end}}
+            {{with .ProjectName}}<span class="proj">{{.}}</span>{{else}}{{with .CompanyName}}<span class="proj company">{{.}}</span>{{end}}{{end}}
             {{range .Tags}}<span class="tag">#{{.Name}}</span>{{end}}
             {{with .DueDate}}<span class="due">due {{.}}</span>{{end}}
             {{range .Flags}}<span class="flag {{.}}">{{.}}</span>{{end}}

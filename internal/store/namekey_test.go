@@ -78,6 +78,7 @@ func TestMigrationBackfillsNameKey(t *testing.T) {
 		`INSERT INTO company (id, name) VALUES (1, 'Éxito')`,
 		`INSERT INTO project (company_id, name) VALUES (1, 'Ñandú')`,
 		`INSERT INTO tag (name) VALUES ('Reunión')`,
+		`INSERT INTO activity (title, duration_min, planned_date, project_id) VALUES ('Old', 30, '2026-11-09', 1)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatal(err)
@@ -98,6 +99,14 @@ func TestMigrationBackfillsNameKey(t *testing.T) {
 	}
 	if _, err := s.CreateProject(ctx, Project{Name: "Nuevo"}); err != nil {
 		t.Errorf("create after migration: %v", err)
+	}
+	// Migration 3: existing activities keep their project, company via it.
+	if as, err := s.ListDay(ctx, today); err != nil || len(as) != 1 || as[0].CompanyName != "Éxito" || as[0].CompanyID != nil {
+		t.Errorf("activity after migration: %+v %v", as, err)
+	}
+	// A project and a direct company at once is refused by the schema itself.
+	if _, err := s.db.ExecContext(ctx, `UPDATE activity SET company_id = 1`); err == nil {
+		t.Error("project_id and company_id both set")
 	}
 }
 
