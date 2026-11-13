@@ -5,7 +5,7 @@ Tasks have durations, can be ordered manually, and are laid out on a daily timel
 **distractors** (meetings, kindergarten pickup, dead time) so I can see at a glance whether the day fits.
 Installable on the phone as a **PWA**.
 
-> Status: M1–M3 done, plus the settings page (companies, projects, tags, working day) and PWA and packaging from M7. M4 (drag & drop, keyboard) next. This README is the source of truth for the implementation.
+> Status: M1–M3 done, plus the settings page (companies, projects, tags, working day) and PWA and packaging from M7. Timeline drag, resize and zoom from M4 are in; list reordering and keyboard shortcuts are next. This README is the source of truth for the implementation.
 
 ---
 
@@ -159,6 +159,12 @@ Display as `5h 40m` (helper `FormatDuration(min int) string`).
 - **Today / Day view** (`/day/2026-11-09`, default today)
   - Left: ordered list (drag & drop via SortableJS → `PATCH /activities/reorder`).
   - Right: vertical timeline with blocks, colored by company; distractors rendered hatched/grey.
+    - Drag a block to move it (snaps to 5 minutes; this **fixes its start**), drag its bottom edge to
+      resize it, click or tap to edit. On touch screens a move starts after holding the block
+      (~350 ms), so swiping still scrolls; the bottom edge resizes straight away. Escape cancels.
+    - Keyboard: focus a block, Enter edits, ↑/↓ move it 15 minutes, Shift+↑/↓ resize it.
+    - Zoom with − / + above the timeline or Ctrl + wheel (trackpad pinch): 0.8–4 px per minute,
+      remembered per device; half-hour lines appear when zoomed in.
   - Header: summary bar: `Tasks 5h 40m · Distractors 2h 10m · Free 0h 10m`, red if negative.
   - Breakdown chips per company: work only by default (`Fox Nation 4h 30m`), with the distractor time
     belonging to that company shown separately (`+30m meetings`).
@@ -225,6 +231,7 @@ GET    /api/day/{date}                blocks + summary (JSON)
 POST   /activities                    create (form or quick-add string)
 PATCH  /activities/{id}               update fields
 POST   /activities/{id}/toggle        todo <-> done
+POST   /activities/{id}/slot          timeline drag: start=HH:MM (fixes it) and/or duration=minutes
 DELETE /activities/{id}
 PATCH  /activities/reorder            {date, ids: [..ordered]}
 POST   /day/{date}/rollover           move unfinished tasks to next day

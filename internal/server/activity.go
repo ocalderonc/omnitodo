@@ -437,6 +437,53 @@ func (s *Server) formInput(v formView) (store.ActivityInput, error) {
 	return in, nil
 }
 
+// slotActivity is a drag on the timeline: "start" (HH:MM) moves the block
+// and fixes its start, "duration" (minutes) resizes it. The day comes back
+// re-planned around it.
+func (s *Server) slotActivity(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	day, err := s.formDay(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var slot store.Slot
+	if raw := r.FormValue("start"); raw != "" {
+		t, err := civil.ParseTime(raw)
+		if err != nil {
+			s.renderDay(w, r, day, "", "Could not move that: "+err.Error()+".", "")
+			return
+		}
+		slot.StartAt = &t
+	}
+	if raw := r.FormValue("duration"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			s.renderDay(w, r, day, "", "Could not resize that: the length is not a number.", "")
+			return
+		}
+		slot.DurationMin = &n
+	}
+	a, err := s.store.SetSlot(r.Context(), id, slot)
+	switch {
+	case errors.Is(err, store.ErrInvalid):
+		s.renderDay(w, r, day, "", capitalize(strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": "))+".", "")
+		return
+	case err != nil:
+		s.fail(w, r, err)
+		return
+	}
+	notice := fmt.Sprintf("“%s” now %s.", a.Title, schedule.FormatDuration(a.DurationMin))
+	if slot.StartAt != nil {
+		notice = fmt.Sprintf("“%s” now starts at %s.", a.Title, a.StartAt)
+	}
+	s.renderDay(w, r, day, notice, "", "")
+}
+
 // --- toggle and delete -------------------------------------------------------------
 
 func (s *Server) toggleActivity(w http.ResponseWriter, r *http.Request) {

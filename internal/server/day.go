@@ -52,6 +52,7 @@ type itemView struct {
 }
 
 type timelineView struct {
+	From   int // the minute of the day at the top, for the drag script
 	Style  template.CSS
 	Hours  []hourMark
 	Blocks []blockView
@@ -59,17 +60,22 @@ type timelineView struct {
 }
 
 type hourMark struct {
+	Half  bool // a half-hour line, shown only when zoomed in
 	Label string
 	Style template.CSS
 }
 
 type blockView struct {
-	Kind  schedule.Kind
-	Title string
-	Range string
-	Done  bool
-	Flags []schedule.Flag
-	Style template.CSS
+	// ID is 0 for free time. Start and Dur are minutes, for the drag script.
+	ID         int64
+	Start, Dur int
+	Anchored   bool
+	Kind       schedule.Kind
+	Title      string
+	Range      string
+	Done       bool
+	Flags      []schedule.Flag
+	Style      template.CSS
 }
 
 // colorStyle is safe to mark as CSS because the store only ever accepts
@@ -171,9 +177,13 @@ func buildTimeline(blocks []schedule.Block, acts []store.Activity, settings stor
 	}
 	from = from / 60 * 60    // round down to the hour
 	to = (to + 59) / 60 * 60 // and up
-	tv := timelineView{Style: template.CSS(fmt.Sprintf("--len:%d;", to-from))}
-	for h := from; h <= to; h += 60 {
-		tv.Hours = append(tv.Hours, hourMark{Label: h.String(), Style: template.CSS(fmt.Sprintf("--s:%d;", h-from))})
+	tv := timelineView{From: int(from), Style: template.CSS(fmt.Sprintf("--len:%d;", to-from))}
+	for h := from; h <= to; h += 30 {
+		m := hourMark{Half: h%60 != 0, Style: template.CSS(fmt.Sprintf("--s:%d;", h-from))}
+		if !m.Half {
+			m.Label = h.String()
+		}
+		tv.Hours = append(tv.Hours, m)
 	}
 
 	byID := map[int64]store.Activity{}
@@ -206,7 +216,8 @@ func buildTimeline(blocks []schedule.Block, acts []store.Activity, settings stor
 		i = j + 1
 	}
 	for i, b := range blocks {
-		bv := blockView{Kind: b.Kind, Range: timeRange(b.Start, b.End), Flags: b.Flags}
+		bv := blockView{ID: b.ActivityID, Start: int(b.Start), Dur: int(b.End - b.Start), Anchored: b.Anchored,
+			Kind: b.Kind, Range: timeRange(b.Start, b.End), Flags: b.Flags}
 		color := ""
 		if b.Kind == schedule.KindFree {
 			bv.Title = "free " + schedule.FormatDuration(int(b.End-b.Start))

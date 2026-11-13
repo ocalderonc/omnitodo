@@ -428,6 +428,55 @@ func (s *Store) MoveToDate(ctx context.Context, id int64, d *civil.Date) error {
 	})
 }
 
+// Slot is a change from dragging on the timeline: a new fixed start, a new
+// length, or both. Nil fields stay as they are.
+type Slot struct {
+	StartAt     *civil.Time
+	DurationMin *int
+}
+
+// SetSlot changes only the start and length of a concrete activity, which is
+// all the timeline can change. A start makes the activity fixed.
+func (s *Store) SetSlot(ctx context.Context, id int64, slot Slot) (Activity, error) {
+	if slot.StartAt == nil && slot.DurationMin == nil {
+		return Activity{}, invalid("nothing to change")
+	}
+	if slot.StartAt != nil && (*slot.StartAt < 0 || *slot.StartAt >= 24*60) {
+		return Activity{}, invalid("start time %s", slot.StartAt)
+	}
+	if slot.DurationMin != nil && (*slot.DurationMin <= 0 || *slot.DurationMin > 24*60) {
+		return Activity{}, invalid("duration must be between 1 minute and 24 hours")
+	}
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		var isTemplate bool
+		err := tx.QueryRowContext(ctx, `SELECT is_template FROM activity WHERE id = ?`, id).Scan(&isTemplate)
+		switch {
+		case err == sql.ErrNoRows:
+			return ErrNotFound
+		case err != nil:
+			return err
+		case isTemplate:
+			return invalid("a recurring template is not on the timeline")
+		}
+		var start any
+		if slot.StartAt != nil {
+			start = nullTime(slot.StartAt)
+		}
+		var dur any
+		if slot.DurationMin != nil {
+			dur = *slot.DurationMin
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE activity SET start_at = coalesce(?, start_at),
+			duration_min = coalesce(?, duration_min),
+			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`, start, dur, id)
+		return err
+	})
+	if err != nil {
+		return Activity{}, err
+	}
+	return s.GetActivity(ctx, id)
+}
+
 // Rollover moves the unfinished tasks of day from to the end of day to, keeping
 // their order, and returns how many moved. Distractors stay (a missed meeting
 // does not happen tomorrow), and so do recurrence instances (tomorrow gets its

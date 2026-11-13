@@ -170,6 +170,29 @@ body.offline::before {
 .block.free { background: none; border: 1px dashed var(--line); color: var(--muted); font-weight: 400; font-size: .82rem; }
 .block.done { opacity: .5; text-decoration: line-through; }
 .block.overflow, .block.conflict { outline: 2px solid var(--danger); outline-offset: -2px; }
+/* Zoom bar: stays reachable while scrolling a long day. */
+.zoom { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: .3rem; padding: .3rem 0; margin-bottom: .4rem; background: var(--bg); }
+.zoom button { padding: .2rem .7rem; font-size: 1.05rem; line-height: 1.2; background: var(--line); color: var(--text); }
+.zoom button:disabled { opacity: .4; }
+.zoom .hint { margin-left: .4rem; color: var(--muted); font-size: .78rem; }
+.zoom .for-touch { display: none; }
+@media (pointer: coarse) { .zoom .for-mouse { display: none; } .zoom .for-touch { display: inline; } }
+.hour.half { border-top-style: dotted; opacity: .55; display: none; }
+#main.zoomed .hour.half { display: block; }
+
+/* Dragging: blocks with an id move and resize (see app.js). */
+.block[data-id] { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.block[data-id]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.block .grip { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; touch-action: none; }
+.block .grip::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 24px; margin-left: -12px; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--text) 35%, transparent); opacity: 0; transition: opacity .15s; }
+.block:hover .grip::after, .block:focus-visible .grip::after, .block.dragging .grip::after { opacity: 1; }
+@media (pointer: coarse) { .block .grip { height: 14px; } .block .grip::after { opacity: .8; } }
+.block.armed { box-shadow: 0 0 0 2px var(--accent); }
+.block.dragging { z-index: 4; cursor: grabbing; opacity: .92; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); transition: none; }
+.block.dragging .range { color: var(--text); font-weight: 700; }
+.block.saving { opacity: .6; }
+body.dragging-block { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+
 .now { position: absolute; left: 0; right: 0; top: calc(var(--s) * var(--ppm)); border-top: 2px solid var(--danger); z-index: 1; }
 
 /* --- dialog form ------------------------------------------------------------ */
@@ -230,10 +253,13 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
   .tabs button { flex: 1; background: var(--line); color: var(--text); }
   #main[data-tab="list"] .tabs [data-tab-btn="list"],
   #main[data-tab="timeline"] .tabs [data-tab-btn="timeline"] { background: var(--accent); color: #fff; }
-  #main[data-tab="list"] .timeline { display: none; }
+  #main[data-tab="list"] .tl { display: none; }
   #main[data-tab="timeline"] .list { display: none; }
   .item { grid-template-columns: auto 1fr; }
   .item .actions { grid-column: 2; }
   .edit { grid-template-columns: 1fr; }
   .quickadd .secondary { display: none; }
+  /* One line that scrolls sideways, rather than four. */
+  .qa-help { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: .1rem; }
+  .qa-help::-webkit-scrollbar { display: none; }
 }

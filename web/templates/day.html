@@ -81,14 +81,28 @@
       {{end}}
     </ol>
 
-    <div class="timeline" style="{{.Timeline.Style}}" aria-label="Timeline">
-      {{range .Timeline.Hours}}<div class="hour" style="{{.Style}}"><span>{{.Label}}</span></div>{{end}}
+    <div class="tl">
+    <div class="zoom" role="group" aria-label="Timeline zoom">
+      <button type="button" class="secondary" data-zoom="-1" aria-label="Zoom out" title="Zoom out (Ctrl + wheel)">−</button>
+      <button type="button" class="secondary" data-zoom="1" aria-label="Zoom in" title="Zoom in (Ctrl + wheel)">+</button>
+      <small class="hint"><span class="for-mouse">Drag a block to move it, its bottom edge to resize. Click to edit.</span><span class="for-touch">Hold a block, then drag to move it. Drag its bottom edge to resize. Tap to edit.</span></small>
+    </div>
+    <div class="timeline" style="{{.Timeline.Style}}" data-from="{{.Timeline.From}}" aria-label="Timeline">
+      {{range .Timeline.Hours}}<div class="hour{{if .Half}} half{{end}}" style="{{.Style}}">{{with .Label}}<span>{{.}}</span>{{end}}</div>{{end}}
       {{range .Timeline.Blocks}}
-      <div class="block {{.Kind}}{{if .Done}} done{{end}}{{range .Flags}} {{.}}{{end}}" style="{{.Style}}" title="{{.Range}} {{.Title}}">
+      {{if .ID}}
+      <div class="block {{.Kind}}{{if .Done}} done{{end}}{{if .Anchored}} anchored{{end}}{{range .Flags}} {{.}}{{end}}" style="{{.Style}}"
+           data-id="{{.ID}}" data-start="{{.Start}}" data-dur="{{.Dur}}" tabindex="0" role="button"
+           title="{{.Range}} {{.Title}}" aria-label="{{.Range}} {{.Title}}. Enter to edit; arrows move it, Shift+arrows resize it.">
         <span class="range">{{.Range}}</span> {{.Title}}
+        <span class="grip" aria-hidden="true"></span>
       </div>
+      {{else}}
+      <div class="block {{.Kind}}" style="{{.Style}}" title="{{.Range}} {{.Title}}"><span class="range">{{.Range}}</span> {{.Title}}</div>
+      {{end}}
       {{end}}
       {{with .Timeline.Now}}<div class="now" style="{{.}}" aria-hidden="true"></div>{{end}}
+    </div>
     </div>
   </div>
 </section>

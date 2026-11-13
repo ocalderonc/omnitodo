@@ -190,6 +190,245 @@
     if (e.key === "Escape" && recording) recording.cancel();
   });
 
+  // --- timeline: zoom, drag to move, drag the bottom edge to resize --------
+  // Blocks are placed by CSS from --s (start, minutes from the top), --d
+  // (length) and --ppm (pixels per minute). A drag only changes those on the
+  // page; on release one request saves it and the day comes back re-planned.
+  // Moving a block fixes its start; resizing keeps it fixed or floating.
+  const SNAP = 5; // minutes
+  const KEY_STEP = 15; // minutes per arrow key
+  const LONG_PRESS_MS = 350; // phones: hold this long before a drag starts
+  const ZOOMS = [0.8, 1.2, 1.5, 2.5, 4]; // pixels per minute
+  const ZOOM_KEY = "omnitodo.zoom";
+  const saved = (() => { try { return parseInt(localStorage.getItem(ZOOM_KEY), 10); } catch { return NaN; } })();
+  let zoom = saved >= 0 && saved < ZOOMS.length ? saved : 2;
+  const ppm = () => ZOOMS[zoom];
+
+  const currentDay = () => {
+    try { return JSON.parse(document.getElementById("day").getAttribute("hx-vals")).day; } catch { return ""; }
+  };
+  const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  const visibleTimeline = () => {
+    const tl = document.querySelector("#day .timeline");
+    return tl && tl.offsetParent !== null ? tl : null;
+  };
+
+  function showZoom() {
+    const main = document.getElementById("main");
+    if (!main) return;
+    main.style.setProperty("--ppm", ppm() + "px");
+    main.classList.toggle("zoomed", ppm() >= 2.5);
+    document.querySelectorAll("[data-zoom]").forEach((b) => {
+      b.disabled = Number(b.dataset.zoom) < 0 ? zoom === 0 : zoom === ZOOMS.length - 1;
+    });
+  }
+  // setZoom keeps the minute at anchorY (a viewport y) where it is, so
+  // zooming does not lose your place.
+  function setZoom(next, anchorY) {
+    next = Math.max(0, Math.min(ZOOMS.length - 1, next));
+    if (next === zoom) return;
+    const tl = visibleTimeline();
+    const y = anchorY ?? innerHeight / 2;
+    const minute = tl ? (y - tl.getBoundingClientRect().top) / ppm() : null;
+    zoom = next;
+    try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch {}
+    showZoom();
+    if (tl && minute !== null) scrollBy(0, tl.getBoundingClientRect().top + minute * ppm() - y);
+  }
+  document.addEventListener("DOMContentLoaded", showZoom);
+  document.addEventListener("htmx:afterSettle", showZoom);
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-zoom]");
+    if (b) setZoom(zoom + Number(b.dataset.zoom));
+  });
+  // Ctrl + wheel, which is also a trackpad pinch.
+  let wheel = 0;
+  document.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey || !e.target.closest?.(".tl")) return;
+    e.preventDefault();
+    wheel += e.deltaY;
+    if (Math.abs(wheel) >= 40) {
+      setZoom(zoom + (wheel < 0 ? 1 : -1), e.clientY);
+      wheel = 0;
+    }
+  }, { passive: false });
+
+  function openEdit(block) {
+    window.htmx?.ajax("GET", `/activities/${block.dataset.id}/edit?day=${encodeURIComponent(currentDay())}`,
+      { target: "#modal-body", swap: "innerHTML" });
+  }
+  let refocus = null;
+  function saveSlot(block, values, onFail) {
+    block.classList.add("saving");
+    const done = () => {
+      // Still on the page means #day was not replaced: put it back.
+      if (block.isConnected) { block.classList.remove("saving"); onFail(); }
+    };
+    const req = window.htmx?.ajax("POST", `/activities/${block.dataset.id}/slot`,
+      { target: "#day", swap: "outerHTML", values: { day: currentDay(), ...values } });
+    if (req) req.then(done, done); else done();
+  }
+  document.addEventListener("htmx:afterSettle", (e) => {
+    if (refocus === null || e.detail.target.id !== "day") return;
+    document.querySelector(`.timeline .block[data-id="${refocus}"]`)?.focus();
+    refocus = null;
+  });
+
+  let drag = null;
+  let suppressClick = false;
+  function begin(block, resize, clientY) {
+    const tl = block.closest(".timeline");
+    drag = {
+      block, resize, from: Number(tl.dataset.from),
+      start: Number(block.dataset.start), dur: Number(block.dataset.dur),
+      y0: clientY + scrollY, lastY: clientY, active: false, timer: 0,
+      range: block.querySelector(".range"),
+    };
+    drag.label = drag.range?.textContent;
+    drag.newStart = drag.start;
+    drag.newDur = drag.dur;
+  }
+  function activate() {
+    drag.active = true;
+    drag.block.classList.add("dragging");
+    document.body.classList.add("dragging-block");
+    navigator.vibrate?.(8);
+  }
+  function place(d, start, dur) {
+    d.block.style.setProperty("--s", start - d.from);
+    d.block.style.setProperty("--d", dur);
+    if (d.range) d.range.textContent = hhmm(start) + "–" + hhmm(start + dur);
+  }
+  function follow(clientY) {
+    const d = drag;
+    d.lastY = clientY;
+    const delta = (clientY + scrollY - d.y0) / ppm();
+    if (d.resize) {
+      let end = Math.round((d.start + d.dur + delta) / SNAP) * SNAP;
+      end = Math.max(d.start + SNAP, Math.min(24 * 60, end));
+      d.newDur = end - d.start;
+    } else {
+      const start = Math.round((d.start + delta) / SNAP) * SNAP;
+      d.newStart = Math.max(0, Math.min(24 * 60 - d.dur, start));
+    }
+    place(d, d.newStart, d.newDur);
+  }
+  // Near the top or bottom of the screen the page scrolls along.
+  let scrolling = 0;
+  function autoScroll() {
+    scrolling = 0;
+    if (!drag?.active) return;
+    const edge = 56, y = drag.lastY;
+    const step = y < edge ? -(edge - y) / 4 : y > innerHeight - edge ? (y - innerHeight + edge) / 4 : 0;
+    if (step) {
+      scrollBy(0, step);
+      follow(y);
+      scrolling = requestAnimationFrame(autoScroll);
+    }
+  }
+  function finish(cancel) {
+    const d = drag;
+    if (!d) return;
+    drag = null;
+    clearTimeout(d.timer);
+    cancelAnimationFrame(scrolling);
+    scrolling = 0;
+    d.block.classList.remove("dragging", "armed");
+    document.body.classList.remove("dragging-block");
+    if (!d.active) return;
+    suppressClick = true;
+    setTimeout(() => (suppressClick = false), 400);
+    const restore = () => {
+      place(d, d.start, d.dur);
+      if (d.range) d.range.textContent = d.label;
+    };
+    if (cancel || (d.newStart === d.start && d.newDur === d.dur)) return restore();
+    saveSlot(d.block, d.resize ? { duration: d.newDur } : { start: hhmm(d.newStart) }, restore);
+  }
+
+  // Mouse and pen: a drag starts after a few pixels; less is a click.
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch" || e.button !== 0 || drag) return;
+    const block = e.target.closest?.(".timeline .block[data-id]");
+    if (!block || block.classList.contains("saving")) return;
+    begin(block, !!e.target.closest(".grip"), e.clientY);
+    block.setPointerCapture?.(e.pointerId);
+  });
+  document.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerType === "touch") return;
+    if (!drag.active && Math.abs(e.clientY + scrollY - drag.y0) > 4) activate();
+    if (drag.active) {
+      follow(e.clientY);
+      if (!scrolling) scrolling = requestAnimationFrame(autoScroll);
+    }
+  });
+  document.addEventListener("pointerup", (e) => e.pointerType !== "touch" && finish(false));
+  document.addEventListener("pointercancel", (e) => e.pointerType !== "touch" && finish(true));
+
+  // Touch: hold still on a block, then drag, so a swipe still scrolls. The
+  // bottom edge resizes straight away (it does not scroll the page).
+  document.addEventListener("touchstart", (e) => {
+    if (drag || e.touches.length !== 1) return finish(true);
+    const block = e.target.closest?.(".timeline .block[data-id]");
+    if (!block || block.classList.contains("saving")) return;
+    const y = e.touches[0].clientY;
+    begin(block, !!e.target.closest(".grip"), y);
+    if (drag.resize) return activate();
+    drag.timer = setTimeout(() => {
+      if (!drag || drag.active) return;
+      drag.block.classList.add("armed");
+      activate();
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+  document.addEventListener("touchmove", (e) => {
+    if (!drag) return;
+    const y = e.touches[0].clientY;
+    if (!drag.active) {
+      if (Math.abs(y + scrollY - drag.y0) > 8) finish(true); // a swipe: let it scroll
+      return;
+    }
+    e.preventDefault();
+    follow(y);
+    if (!scrolling) scrolling = requestAnimationFrame(autoScroll);
+  }, { passive: false });
+  document.addEventListener("keydown", (e) => e.key === "Escape" && drag && finish(true));
+  document.addEventListener("touchend", () => finish(false));
+  document.addEventListener("touchcancel", () => finish(true));
+  addEventListener("scroll", () => drag && !drag.active && finish(true), { passive: true });
+  document.addEventListener("contextmenu", (e) => {
+    if (e.target.closest?.(".timeline .block[data-id]")) e.preventDefault();
+  });
+
+  // A click or tap that was not a drag opens the edit dialog.
+  document.addEventListener("click", (e) => {
+    const block = e.target.closest(".timeline .block[data-id]");
+    if (!block) return;
+    if (suppressClick) { e.preventDefault(); return; }
+    openEdit(block);
+  }, true);
+
+  // Keyboard: Enter edits, arrows move (fixing the start), Shift+arrows resize.
+  document.addEventListener("keydown", (e) => {
+    const block = e.target.closest?.(".timeline .block[data-id]");
+    if (!block || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openEdit(block);
+      return;
+    }
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    if (block.classList.contains("saving")) return;
+    const step = e.key === "ArrowUp" ? -KEY_STEP : KEY_STEP;
+    const start = Number(block.dataset.start), dur = Number(block.dataset.dur);
+    refocus = block.dataset.id;
+    if (e.shiftKey) {
+      saveSlot(block, { duration: Math.max(SNAP, dur + step) }, () => {});
+    } else {
+      saveSlot(block, { start: hhmm(Math.max(0, Math.min(24 * 60 - dur, start + step))) }, () => {});
+    }
+  });
+
   // After a quick add, keep the cursor in the input for the next one.
   document.addEventListener("htmx:afterSettle", (e) => {
     if (e.detail.target.id !== "day" || modal()?.open) return;

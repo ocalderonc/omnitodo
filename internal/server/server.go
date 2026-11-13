@@ -110,6 +110,7 @@ func (s *Server) routes() http.Handler {
 		r.Get("/activities/{id}/edit", s.editForm)
 		r.Patch("/activities/{id}", s.updateActivity)
 		r.Post("/activities/{id}/toggle", s.toggleActivity)
+		r.Post("/activities/{id}/slot", s.slotActivity)
 		r.Delete("/activities/{id}", s.deleteActivity)
 		r.Post("/voice", s.voiceDraft)
 

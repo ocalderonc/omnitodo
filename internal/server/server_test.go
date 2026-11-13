@@ -443,3 +443,45 @@ func TestPWA(t *testing.T) {
 	r = e.do(http.MethodGet, "/login", nil, false)
 	contains(t, "layout", r.body, `rel="manifest"`, `rel="apple-touch-icon"`, `name="theme-color"`)
 }
+
+func TestTimelineSlot(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	e.do(http.MethodPost, "/activities", url.Values{"day": {"2026-11-09"}, "q": {"Write report 1h"}}, true)
+	acts, _ := e.store.ListDay(ctx, today)
+	if len(acts) != 1 {
+		t.Fatalf("setup: %+v", acts)
+	}
+	path := "/activities/" + itoa(acts[0].ID) + "/slot"
+
+	r := e.do(http.MethodGet, "/day/2026-11-09", nil, false)
+	contains(t, "draggable block", r.body, `data-id="`+itoa(acts[0].ID)+`" data-start="480" data-dur="60"`,
+		`data-from="`, `data-zoom="1"`, `class="hour half"`)
+
+	r = e.do(http.MethodPost, path, url.Values{"day": {"2026-11-09"}, "start": {"10:15"}}, true)
+	contains(t, "moved", r.body, "“Write report” now starts at 10:15.", "10:15–11:15")
+	r = e.do(http.MethodPost, path, url.Values{"day": {"2026-11-09"}, "duration": {"90"}}, true)
+	contains(t, "resized", r.body, "“Write report” now 1h 30m.", "10:15–11:45")
+	a, _ := e.store.GetActivity(ctx, acts[0].ID)
+	if a.StartAt == nil || a.StartAt.String() != "10:15" || a.DurationMin != 90 || a.Title != "Write report" {
+		t.Errorf("stored: %+v", a)
+	}
+
+	for name, v := range map[string]url.Values{
+		"bad start":     {"start": {"25:00"}},
+		"bad duration":  {"duration": {"0"}},
+		"not a number":  {"duration": {"lots"}},
+		"nothing given": {},
+	} {
+		v.Set("day", "2026-11-09")
+		if r := e.do(http.MethodPost, path, v, true); r.status != 200 || !strings.Contains(r.body, `class="error"`) {
+			t.Errorf("%s: %d\n%s", name, r.status, r.body)
+		}
+	}
+	if a2, _ := e.store.GetActivity(ctx, acts[0].ID); a2.DurationMin != 90 || a2.StartAt.String() != "10:15" {
+		t.Errorf("a refused change was stored: %+v", a2)
+	}
+	if r := e.do(http.MethodPost, "/activities/9999/slot", url.Values{"day": {"2026-11-09"}, "start": {"09:00"}}, true); r.status != http.StatusNotFound {
+		t.Errorf("unknown id: %d", r.status)
+	}
+}

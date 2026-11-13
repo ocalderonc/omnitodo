@@ -397,3 +397,32 @@ func TestBackup(t *testing.T) {
 		t.Errorf("backup has %d activities today, want 6", len(got))
 	}
 }
+
+func TestSetSlot(t *testing.T) {
+	s := open(t)
+	a, err := s.CreateActivity(ctx, ActivityInput{Title: "Report", DurationMin: 60, PlannedDate: &today, Tags: []string{"x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, dur := civil.NewTime(9, 30), 45
+	got, err := s.SetSlot(ctx, a.ID, Slot{StartAt: &start})
+	if err != nil || got.StartAt == nil || *got.StartAt != start || got.DurationMin != 60 || len(got.Tags) != 1 {
+		t.Fatalf("move: %+v %v", got, err)
+	}
+	if got, err = s.SetSlot(ctx, a.ID, Slot{DurationMin: &dur}); err != nil || *got.StartAt != start || got.DurationMin != 45 {
+		t.Fatalf("resize: %+v %v", got, err)
+	}
+	tpl, err := s.CreateActivity(ctx, ActivityInput{Title: "Standup", DurationMin: 15, PlannedDate: &today, Recurrence: "daily"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetSlot(ctx, tpl.ID, Slot{StartAt: &start}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("template: %v", err)
+	}
+	if _, err := s.SetSlot(ctx, 9999, Slot{StartAt: &start}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing: %v", err)
+	}
+	if _, err := s.SetSlot(ctx, a.ID, Slot{}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("empty: %v", err)
+	}
+}
