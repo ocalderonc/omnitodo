@@ -110,6 +110,9 @@ body.offline::before {
 
 .quickadd { display: flex; gap: .5rem; margin: .5rem 0; }
 .quickadd input { flex: 1; }
+.qa-help { display: flex; flex-wrap: wrap; gap: .15rem .9rem; margin: -.2rem 0 .6rem; font-size: .78rem; color: var(--muted); }
+.qa-help span { white-space: nowrap; }
+.qa-help code { font-size: .78rem; color: var(--text); background: var(--free); border: 1px solid var(--line); border-radius: 4px; padding: 0 .25rem; }
 
 /* --- list + timeline -------------------------------------------------------- */
 .tabs { display: none; }

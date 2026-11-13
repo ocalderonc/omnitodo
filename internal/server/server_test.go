@@ -303,7 +303,8 @@ func TestFormEditToggleDelete(t *testing.T) {
 	e.login()
 
 	r := e.do(http.MethodGet, "/activities/new", url.Values{"day": {"2026-11-09"}}, true)
-	contains(t, "new form", r.body, `hx-post="/activities"`, `value="30m"`, `name="day" value="2026-11-09"`)
+	contains(t, "new form", r.body, `hx-post="/activities"`, `value="30m"`, `name="day" value="2026-11-09"`,
+		`name="date" value="2026-11-09" required`)
 
 	form := url.Values{"form": {"1"}, "day": {"2026-11-09"}, "title": {"Standup"}, "kind": {"distractor"},
 		"duration": {"15"}, "start_at": {"09:30"}, "tags": {"#team, sync"}}
@@ -331,6 +332,30 @@ func TestFormEditToggleDelete(t *testing.T) {
 	form.Set("start_at", "")
 	r = e.do(http.MethodPatch, path, form, true)
 	contains(t, "valid edit", r.body, "Saved “Long standup”", "08:00–09:15")
+
+	r = e.do(http.MethodGet, path+"/edit", url.Values{"day": {"2026-11-09"}}, true)
+	contains(t, "edit form date", r.body, `name="date" value="2026-11-09"`)
+
+	// A new date moves it; the day being viewed stays put.
+	form.Set("date", "2026-11-10")
+	r = e.do(http.MethodPatch, path, form, true)
+	contains(t, "moved", r.body, "Saved “Long standup” on Tuesday 10 November.", "Nothing planned yet")
+	if a, _ := e.store.GetActivity(ctx, id); a.PlannedDate == nil || a.PlannedDate.String() != "2026-11-10" {
+		t.Fatalf("moved to %v", a.PlannedDate)
+	}
+	form.Set("date", "2026-11-09")
+	e.do(http.MethodPatch, path, form, true)
+	form.Set("date", "not a date")
+	contains(t, "bad date", e.do(http.MethodPatch, path, form, true).body, `date &#34;not a date&#34;`)
+	form.Del("date")
+
+	// A new activity can go straight to another day.
+	r = e.do(http.MethodPost, "/activities", url.Values{"form": {"1"}, "day": {"2026-11-09"}, "date": {"2026-11-11"},
+		"title": {"Later"}, "kind": {"task"}, "duration": {"30m"}}, true)
+	contains(t, "created elsewhere", r.body, "Saved “Later” on Wednesday 11 November.")
+	if acts, _ := e.store.ListDay(ctx, civil.NewDate(2026, 11, 11)); len(acts) != 1 {
+		t.Errorf("on the 11th: %+v", acts)
+	}
 
 	r = e.do(http.MethodPost, path+"/toggle", url.Values{"day": {"2026-11-09"}}, true)
 	contains(t, "toggled", r.body, `aria-pressed="true"`)

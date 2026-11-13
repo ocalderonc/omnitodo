@@ -131,7 +131,7 @@ func voiceMessage(err error) string {
 
 func (s *Server) voiceForm(w http.ResponseWriter, r *http.Request, day civil.Date, heard voice.Heard, err error) {
 	d := heard.Draft
-	v := formView{Day: day, Kind: string(schedule.KindTask), Duration: "30m", Heard: heard.Transcript, Voice: true}
+	v := formView{Day: day, Date: day.String(), Kind: string(schedule.KindTask), Duration: "30m", Heard: heard.Transcript, Voice: true}
 	if err != nil {
 		v.Error = voiceMessage(err)
 	} else {
@@ -142,7 +142,7 @@ func (s *Server) voiceForm(w http.ResponseWriter, r *http.Request, day civil.Dat
 			v.Notes = append(v.Notes, "No duration heard: 30m by default.")
 		}
 		if d.Date != nil {
-			v.Day = *d.Date
+			v.Date = d.Date.String()
 		}
 		if d.StartAt != nil {
 			v.StartAt = d.StartAt.String()

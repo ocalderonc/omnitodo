@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -20,6 +21,11 @@ type formView struct {
 	Day        civil.Date
 	IsTemplate bool
 	Error      string
+	// Date is the day the activity is planned for, shown in the form and
+	// pre-set to the day being viewed. FixedDay hides it: recurring
+	// activities keep their day.
+	Date     string
+	FixedDay bool
 
 	Title, Kind, Duration, StartAt, DueDate, Tags, Recurrence, Description string
 	Owner                                                                  string // "p:<id>", "c:<id>" or ""
@@ -256,7 +262,7 @@ func (s *Server) newForm(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderFragment(w, r, "form", formView{Day: day, Kind: string(schedule.KindTask), Duration: "30m", Owners: owners})
+	s.renderFragment(w, r, "form", formView{Day: day, Date: day.String(), Kind: string(schedule.KindTask), Duration: "30m", Owners: owners})
 }
 
 func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +290,10 @@ func (s *Server) editForm(w http.ResponseWriter, r *http.Request) {
 		ID: a.ID, Day: day, IsTemplate: a.IsTemplate, Owners: owners, Owner: ownerOf(a),
 		Title: a.Title, Kind: string(a.Kind), Duration: compactDuration(a.DurationMin),
 		Recurrence: a.Recurrence, Description: a.Description,
+		FixedDay: a.IsTemplate || a.TemplateID != nil,
+	}
+	if a.PlannedDate != nil {
+		v.Date = a.PlannedDate.String()
 	}
 	if a.StartAt != nil {
 		v.StartAt = a.StartAt.String()
@@ -325,19 +335,32 @@ func (s *Server) saveForm(w http.ResponseWriter, r *http.Request, id int64, day 
 		Title: r.FormValue("title"), Kind: r.FormValue("kind"), Duration: r.FormValue("duration"),
 		StartAt: r.FormValue("start_at"), DueDate: r.FormValue("due_date"), Tags: r.FormValue("tags"),
 		Recurrence: strings.TrimSpace(r.FormValue("recurrence")), Description: r.FormValue("description"),
+		Date: strings.TrimSpace(r.FormValue("date")),
 	}
 	v.Owner = r.FormValue("owner")
 	in, err := s.formInput(v)
+	planned := day
+	if err == nil && v.Date != "" {
+		if planned, err = civil.ParseDate(v.Date); err != nil {
+			err = fmt.Errorf("%w: date %q", store.ErrInvalid, v.Date)
+		}
+	}
 	if err == nil {
 		var a store.Activity
 		if id == 0 {
-			in.PlannedDate = &day
+			in.PlannedDate = &planned
 			a, err = s.store.CreateActivity(r.Context(), in)
-		} else {
-			a, err = s.store.UpdateActivity(r.Context(), id, in)
+		} else if a, err = s.store.UpdateActivity(r.Context(), id, in); err == nil && v.Date != "" &&
+			!a.IsTemplate && a.TemplateID == nil && (a.PlannedDate == nil || *a.PlannedDate != planned) {
+			// A changed date moves it, to the end of that day's list.
+			err = s.store.MoveToDate(r.Context(), id, &planned)
 		}
 		if err == nil {
-			s.renderDay(w, r, day, fmt.Sprintf("Saved “%s”.", a.Title), "", "")
+			notice := fmt.Sprintf("Saved “%s”.", a.Title)
+			if planned != day && !a.IsTemplate {
+				notice = fmt.Sprintf("Saved “%s” on %s.", a.Title, planned.In(time.UTC).Format("Monday 2 January"))
+			}
+			s.renderDay(w, r, day, notice, "", "")
 			return
 		}
 	}
@@ -351,6 +374,7 @@ func (s *Server) saveForm(w http.ResponseWriter, r *http.Request, id int64, day 
 	if id != 0 {
 		if a, err := s.store.GetActivity(r.Context(), id); err == nil {
 			v.IsTemplate = a.IsTemplate
+			v.FixedDay = a.IsTemplate || a.TemplateID != nil
 			if ownerOf(a) == v.Owner {
 				keep, keepLabel = v.Owner, ownerLabel(a)
 			}

@@ -33,6 +33,7 @@
     {{if .VoiceEnabled}}<button type="button" class="mic" data-voice hidden aria-label="Add by voice" title="Add by voice"><span aria-hidden="true">🎤</span></button>{{end}}
     <button type="button" class="secondary" hx-get="/activities/new" hx-target="#modal-body" hx-swap="innerHTML">Form…</button>
   </form>
+  <p class="qa-help" aria-label="Quick-add syntax"><span><code>45m</code> <code>1h30m</code> length</span> <span><code>+Project</code> <code>+Company/Project</code> <code>+Company/</code></span> <span><code>#tag</code></span> <span><code>@14:00</code> start</span> <span><code>!fri</code> <code>!tomorrow</code> due</span> <span><code>~d</code> distractor</span> <span><code>*weekdays</code> <code>*daily</code> repeats</span></p>
   {{if .VoiceEnabled}}<p class="voice-status" role="status" hidden></p>{{end}}
   {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
   {{with .MissingProject}}

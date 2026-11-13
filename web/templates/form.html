@@ -15,8 +15,9 @@
     </select>
   </label>
   <label>Duration <input name="duration" value="{{.Duration}}" placeholder="45m, 1h30m" required></label>
+  {{if not .FixedDay}}<label>{{if .Recurrence}}Starts{{else}}Date{{end}} <input type="date" name="date" value="{{.Date}}"{{if not .ID}} required{{end}}></label>{{end}}
   <label>Fixed start <input type="time" name="start_at" value="{{.StartAt}}"></label>
-  <label>Due <input type="date" name="due_date" value="{{.DueDate}}"></label>
+  <label>Due <small>(optional)</small> <input type="date" name="due_date" value="{{.DueDate}}"></label>
   <label class="wide">Project
     <select name="owner">
       <option value="">—</option>
